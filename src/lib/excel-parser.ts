@@ -215,8 +215,7 @@ function mapProjectField(
     const enidoorSub = subcontracts.find(s => s.company_name === 'エニドア')
     if (enidoorSub) {
       enidoorSub.delegated_amount = num(value) || 0
-      // エニドア分売上 = 保証再生数×受注単価（notesから推定、またはdelegated_budget/revenueを設定）
-      if (!enidoorSub.delegated_budget) enidoorSub.delegated_budget = num(value) || 0
+      // エニドア分売上 = 保証再生数×受注単価
       if (!enidoorSub.delegated_revenue) enidoorSub.delegated_revenue = num(value) || 0
     } else if (note) {
       // 別の代理店（アドベスト等）の場合は新規エントリ
@@ -224,7 +223,6 @@ function mapProjectField(
         sort_order: subcontracts.length + 1,
         company_name: note,
         delegated_amount: num(value) || 0,
-        delegated_budget: num(value) || 0,
         delegated_revenue: num(value) || 0,
         notes: '',
       })
@@ -250,8 +248,8 @@ function mapProjectField(
   // 外注区分（v2: 汎用エントリ）
   else if (section.includes('YMS発注')) {
     let sub = subcontracts.find(s => s.company_name === 'YMS')
-    if (!sub) { sub = { sort_order: subcontracts.length + 1, company_name: 'YMS', delegated_amount: 0, delegated_budget: 0, delegated_revenue: 0, notes: '' }; subcontracts.push(sub) }
-    if (fieldName.includes('委託分予算')) { sub.delegated_budget = num(value) || 0; sub.delegated_revenue = num(value) || 0 }
+    if (!sub) { sub = { sort_order: subcontracts.length + 1, company_name: 'YMS', delegated_amount: 0, delegated_revenue: 0, notes: '' }; subcontracts.push(sub) }
+    if (fieldName.includes('委託分予算')) { sub.delegated_revenue = num(value) || 0 }
     else if (fieldName.includes('YMS社お支払い') || fieldName.includes('YMS社お支払')) sub.delegated_amount = num(value) || 0
     // notesに詳細条件を追記
     if (fieldName.includes('保証再生数')) sub.notes = (sub.notes ? sub.notes + ', ' : '') + `保証再生数: ${num(value)}`
@@ -259,7 +257,7 @@ function mapProjectField(
   }
   else if (section.includes('エニドア発注')) {
     let sub = subcontracts.find(s => s.company_name === 'エニドア')
-    if (!sub) { sub = { sort_order: subcontracts.length + 1, company_name: 'エニドア', delegated_amount: 0, delegated_budget: 0, delegated_revenue: 0, notes: '' }; subcontracts.push(sub) }
+    if (!sub) { sub = { sort_order: subcontracts.length + 1, company_name: 'エニドア', delegated_amount: 0, delegated_revenue: 0, notes: '' }; subcontracts.push(sub) }
     // エニドア: delegated_amount = その他代理店支払額相当
     if (fieldName.includes('保証再生数')) sub.notes = (sub.notes ? sub.notes + ', ' : '') + `保証再生数: ${num(value)}`
     else if (fieldName.includes('投稿数') || fieldName.includes('投稿人数')) sub.notes = (sub.notes ? sub.notes + ', ' : '') + `投稿${num(value)}人`

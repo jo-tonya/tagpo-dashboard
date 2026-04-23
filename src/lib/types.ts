@@ -61,7 +61,6 @@ export interface CampaignSubcontract {
   sort_order: number
   company_name: string
   delegated_amount: number
-  delegated_budget: number
   delegated_revenue: number
   notes: string | null
 }
@@ -155,13 +154,15 @@ export interface Invoice {
 }
 
 // MonthlyPL — ビューから取得
+// project_cost を user_reward_cost / subcontract_cost / ad_delivery_cost に分解。
 export interface MonthlyPL {
   month: string
   revenue: number
   e_guardian_cost: number
   personnel_cost: number
   user_reward_cost: number
-  project_cost: number
+  subcontract_cost: number
+  ad_delivery_cost: number
   total_cost: number
   operating_profit: number
 }

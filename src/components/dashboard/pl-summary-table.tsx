@@ -30,6 +30,25 @@ function sumByKey(data: MonthlyPL[], key: PLKey): number {
   return data.reduce((sum, d) => sum + d[key], 0)
 }
 
+type CostRow = {
+  key: string
+  label: string
+  plKey: PLKey
+  expandable: boolean // 案件別内訳を持つか
+  costTypes?: string[] // campaign_costs.cost_type のフィルタ（expandable の内訳に使う）
+}
+
+const PROJECT_COST_ROWS: CostRow[] = [
+  { key: 'e_guardian_cost', label: '審査費（イー・ガーディアン）', plKey: 'e_guardian_cost', expandable: false },
+  { key: 'user_reward_cost', label: 'ユーザー報酬', plKey: 'user_reward_cost', expandable: true, costTypes: ['tonya_user_payment'] },
+  { key: 'subcontract_cost', label: '外注費', plKey: 'subcontract_cost', expandable: true, costTypes: ['subcontract_1', 'subcontract_2', 'subcontract_3'] },
+  { key: 'ad_delivery_cost', label: '広告配信費', plKey: 'ad_delivery_cost', expandable: true, costTypes: ['ad_delivery'] },
+]
+
+const NON_PROJECT_COST_ROWS: CostRow[] = [
+  { key: 'personnel_cost', label: 'アルバイト、イベント、インターン', plKey: 'personnel_cost', expandable: false },
+]
+
 export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDetails }: PLSummaryTableProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [viewMode, setViewMode] = useState<'all' | 'confirmed'>('all')
@@ -40,73 +59,54 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
     return revenueDetails.filter(rd => rd.certainty === '確定')
   }, [revenueDetails, viewMode])
 
-  // Inject user_reward_cost from costStatusDetails and split from project_cost
-  const dataWithReward = useMemo(() => {
-    const rewardByMonth: Record<string, number> = {}
-    costStatusDetails
-      .filter(c => c.source === 'user_reward')
-      .forEach(c => {
-        rewardByMonth[c.target_month] = (rewardByMonth[c.target_month] || 0) + c.amount
-      })
-    return data.map(d => {
-      const userRewardCost = rewardByMonth[d.month] || 0
-      return {
-        ...d,
-        user_reward_cost: userRewardCost,
-        project_cost: d.project_cost - userRewardCost, // remove user_reward from project_cost to avoid double counting
-      }
-    })
-  }, [data, costStatusDetails])
-
   // Adjust PL data when in confirmed mode
+  // 通常モードでは view が user_reward_cost / subcontract_cost / ad_delivery_cost を直接返すので
+  // 何も変換せずそのまま使う。
   const adjustedData = useMemo(() => {
-    if (viewMode === 'all') return dataWithReward
+    if (viewMode === 'all') return data
 
     const confirmedRevByMonth: Record<string, number> = {}
     filteredRevenueDetails.forEach(rd => {
       confirmedRevByMonth[rd.month] = (confirmedRevByMonth[rd.month] || 0) + rd.billing_amount
     })
 
-    const confirmedEgByMonth: Record<string, number> = {}
-    costStatusDetails
-      .filter(c => c.source === 'e_guardian' && c.status === '確定')
-      .forEach(c => {
-        confirmedEgByMonth[c.target_month] = (confirmedEgByMonth[c.target_month] || 0) + c.amount
-      })
+    const sumBySource = (src: CostStatusDetail['source']): Record<string, number> => {
+      const out: Record<string, number> = {}
+      costStatusDetails
+        .filter(c => c.source === src && c.status === '確定')
+        .forEach(c => {
+          out[c.target_month] = (out[c.target_month] || 0) + c.amount
+        })
+      return out
+    }
 
-    const confirmedPersonnelByMonth: Record<string, number> = {}
-    costStatusDetails
-      .filter(c => c.source === 'personnel' && c.status === '確定')
-      .forEach(c => {
-        confirmedPersonnelByMonth[c.target_month] = (confirmedPersonnelByMonth[c.target_month] || 0) + c.amount
-      })
+    const confirmedEgByMonth = sumBySource('e_guardian')
+    const confirmedPersonnelByMonth = sumBySource('personnel')
+    const confirmedRewardByMonth = sumBySource('user_reward')
+    const confirmedSubcontractByMonth = sumBySource('subcontract')
+    const confirmedAdDeliveryByMonth = sumBySource('ad_delivery')
 
-    const confirmedRewardByMonth: Record<string, number> = {}
-    costStatusDetails
-      .filter(c => c.source === 'user_reward' && c.status === '確定')
-      .forEach(c => {
-        confirmedRewardByMonth[c.target_month] = (confirmedRewardByMonth[c.target_month] || 0) + c.amount
-      })
-
-    return dataWithReward.map(d => {
+    return data.map(d => {
       const revenue = confirmedRevByMonth[d.month] || 0
       const egCost = confirmedEgByMonth[d.month] || 0
       const personnelCost = confirmedPersonnelByMonth[d.month] || 0
       const userRewardCost = confirmedRewardByMonth[d.month] || 0
-      const projectCost = d.project_cost
-      const totalCost = egCost + personnelCost + userRewardCost + projectCost
+      const subcontractCost = confirmedSubcontractByMonth[d.month] || 0
+      const adDeliveryCost = confirmedAdDeliveryByMonth[d.month] || 0
+      const totalCost = egCost + personnelCost + userRewardCost + subcontractCost + adDeliveryCost
       return {
         ...d,
         revenue,
         e_guardian_cost: egCost,
         personnel_cost: personnelCost,
         user_reward_cost: userRewardCost,
-        project_cost: projectCost,
+        subcontract_cost: subcontractCost,
+        ad_delivery_cost: adDeliveryCost,
         total_cost: totalCost,
         operating_profit: revenue - totalCost,
       }
     })
-  }, [dataWithReward, filteredRevenueDetails, costStatusDetails, viewMode])
+  }, [data, filteredRevenueDetails, costStatusDetails, viewMode])
 
   const data2025 = adjustedData.filter(d => d.month.startsWith('2025'))
   const data2026 = adjustedData.filter(d => d.month.startsWith('2026'))
@@ -143,29 +143,26 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
     }))
     .sort((a, b) => a.earliestMonth.localeCompare(b.earliestMonth))
 
-  // 「案件コスト（原価）」行の内訳からユーザー報酬（tonya_user_payment）を除外する。
-  // ユーザー報酬は独立した行として既に表示されており、dataWithReward 側で
-  // project_cost から減算済みのため、内訳にも残すとダブルカウント表示になる。
-  const projectCostDetails = costDetails.filter(cd => cd.cost_type !== 'tonya_user_payment')
-
-  // Cost details grouped by project + cost_label
-  const costByProjectLabel = projectCostDetails.reduce<Record<string, CostDetail[]>>((acc, cd) => {
-    const key = `${cd.campaign_id}::${cd.cost_label}`
-    if (!acc[key]) acc[key] = []
-    acc[key].push(cd)
-    return acc
-  }, {})
-
-  const costGroups = Object.entries(costByProjectLabel)
-    .map(([compositeKey, details]) => ({
-      compositeKey,
-      projectId: details[0].campaign_id,
-      displayName: details[0].display_name,
-      costLabel: details[0].cost_label,
-      details,
-      earliestMonth: details.reduce((min, d) => d.month < min ? d.month : min, details[0].month),
-    }))
-    .sort((a, b) => a.earliestMonth.localeCompare(b.earliestMonth))
+  // 展開時の内訳: cost_type フィルタを受けて campaign_id × cost_label でグルーピング
+  function buildCostGroups(costTypes: string[]) {
+    const filtered = costDetails.filter(cd => costTypes.includes(cd.cost_type))
+    const byKey = filtered.reduce<Record<string, CostDetail[]>>((acc, cd) => {
+      const key = `${cd.campaign_id}::${cd.cost_label}`
+      if (!acc[key]) acc[key] = []
+      acc[key].push(cd)
+      return acc
+    }, {})
+    return Object.entries(byKey)
+      .map(([compositeKey, details]) => ({
+        compositeKey,
+        projectId: details[0].campaign_id,
+        displayName: details[0].display_name,
+        costLabel: details[0].cost_label,
+        details,
+        earliestMonth: details.reduce((min, d) => d.month < min ? d.month : min, details[0].month),
+      }))
+      .sort((a, b) => a.earliestMonth.localeCompare(b.earliestMonth))
+  }
 
   function getMonthValue(details: { month: string; billing_amount?: number; amount?: number }[], month: string): number {
     const found = details.find(d => d.month === month)
@@ -180,14 +177,69 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
   }
 
   const isRevenueExpanded = expanded.has('revenue')
-  const isCostExpanded = expanded.has('project_cost')
 
-  const expandableRows: { key: string; label: string; plKey: PLKey; className: string }[] = [
-    { key: 'e_guardian_cost', label: 'イー・ガーディアン', plKey: 'e_guardian_cost', className: 'text-gray-600' },
-    { key: 'personnel_cost', label: 'アルバイト・イベント・インターン', plKey: 'personnel_cost', className: 'text-gray-600' },
-    { key: 'user_reward_cost', label: 'ユーザー報酬', plKey: 'user_reward_cost', className: 'text-gray-600' },
-    { key: 'project_cost', label: '案件コスト（原価）', plKey: 'project_cost', className: 'text-gray-600' },
-  ]
+  function renderCostRow(row: CostRow) {
+    const isRowExpanded = row.expandable && expanded.has(row.key)
+    const groups = isRowExpanded && row.costTypes ? buildCostGroups(row.costTypes) : []
+
+    return (
+      <React.Fragment key={row.key}>
+        <TableRow
+          className={row.expandable ? 'cursor-pointer hover:bg-gray-100 transition-all duration-200' : ''}
+          onClick={row.expandable ? () => toggleExpand(row.key) : undefined}
+        >
+          <TableCell className="sticky left-0 z-10 bg-white text-sm pl-6 text-gray-600">
+            {row.expandable ? (
+              <span className="inline-flex items-center gap-1">
+                {isRowExpanded
+                  ? <ChevronDown className="h-4 w-4" />
+                  : <ChevronRight className="h-4 w-4" />}
+                {row.label}
+              </span>
+            ) : (
+              row.label
+            )}
+          </TableCell>
+          {adjustedData.map(d => (
+            <TableCell key={d.month} className="text-right text-sm tabular-nums">
+              {d[row.plKey] === 0 ? '—' : formatCurrency(d[row.plKey])}
+            </TableCell>
+          ))}
+          <TableCell className="text-right text-sm tabular-nums bg-blue-50">
+            {formatCurrency(sumByKey(data2025, row.plKey))}
+          </TableCell>
+          <TableCell className="text-right text-sm tabular-nums bg-blue-50">
+            {formatCurrency(sumByKey(data2026, row.plKey))}
+          </TableCell>
+        </TableRow>
+
+        {isRowExpanded && groups.map(({ compositeKey, projectId, displayName, costLabel, details }) => (
+          <TableRow key={`cost-${row.key}-${compositeKey}`} className="bg-gray-50 transition-all duration-200">
+            <TableCell className="sticky left-0 z-10 bg-gray-50 text-sm pl-8 text-gray-600">
+              <Link href={`/campaigns/${projectId}`} className="text-blue-600 hover:underline">
+                {displayName}
+              </Link>
+              <span className="text-gray-400 ml-1 text-xs">({costLabel})</span>
+            </TableCell>
+            {adjustedData.map(d => {
+              const val = getMonthValue(details.map(x => ({ month: x.month, amount: x.amount })), d.month)
+              return (
+                <TableCell key={d.month} className="text-right text-sm tabular-nums text-gray-600">
+                  {val === 0 ? '—' : formatCurrency(val)}
+                </TableCell>
+              )
+            })}
+            <TableCell className="text-right text-sm tabular-nums bg-blue-50 text-gray-600">
+              {formatCurrency(sumDetails(details.map(x => ({ month: x.month, amount: x.amount })), '2025'))}
+            </TableCell>
+            <TableCell className="text-right text-sm tabular-nums bg-blue-50 text-gray-600">
+              {formatCurrency(sumDetails(details.map(x => ({ month: x.month, amount: x.amount })), '2026'))}
+            </TableCell>
+          </TableRow>
+        ))}
+      </React.Fragment>
+    )
+  }
 
   return (
     <Card>
@@ -299,70 +351,27 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
               <TableCell className="bg-blue-50" />
             </TableRow>
 
-            {/* コスト各行 */}
-            {expandableRows.map(row => {
-              const isExpandable = row.key === 'project_cost'
-              const isRowExpanded = isExpandable && isCostExpanded
+            {/* 【案件コスト】セクション */}
+            <TableRow className="bg-gray-50">
+              <TableCell className="sticky left-0 z-10 bg-gray-50 text-xs font-medium text-gray-500 pl-4" colSpan={1}>
+                【案件コスト】
+              </TableCell>
+              {adjustedData.map(d => <TableCell key={d.month} />)}
+              <TableCell className="bg-blue-50" />
+              <TableCell className="bg-blue-50" />
+            </TableRow>
+            {PROJECT_COST_ROWS.map(renderCostRow)}
 
-              return (
-                <React.Fragment key={row.key}>
-                  <TableRow
-                    className={isExpandable ? 'cursor-pointer hover:bg-gray-100 transition-all duration-200' : ''}
-                    onClick={isExpandable ? () => toggleExpand('project_cost') : undefined}
-                  >
-                    <TableCell className={`sticky left-0 z-10 bg-white text-sm pl-6 ${row.className}`}>
-                      {isExpandable ? (
-                        <span className="inline-flex items-center gap-1">
-                          {isRowExpanded
-                            ? <ChevronDown className="h-4 w-4" />
-                            : <ChevronRight className="h-4 w-4" />}
-                          {row.label}
-                        </span>
-                      ) : (
-                        row.label
-                      )}
-                    </TableCell>
-                    {adjustedData.map(d => (
-                      <TableCell key={d.month} className="text-right text-sm tabular-nums">
-                        {d[row.plKey] === 0 ? '—' : formatCurrency(d[row.plKey])}
-                      </TableCell>
-                    ))}
-                    <TableCell className="text-right text-sm tabular-nums bg-blue-50">
-                      {formatCurrency(sumByKey(data2025, row.plKey))}
-                    </TableCell>
-                    <TableCell className="text-right text-sm tabular-nums bg-blue-50">
-                      {formatCurrency(sumByKey(data2026, row.plKey))}
-                    </TableCell>
-                  </TableRow>
-
-                  {/* 案件コスト expanded rows */}
-                  {isRowExpanded && costGroups.map(({ compositeKey, projectId, displayName, costLabel, details }) => (
-                    <TableRow key={`cost-${compositeKey}`} className="bg-gray-50 transition-all duration-200">
-                      <TableCell className="sticky left-0 z-10 bg-gray-50 text-sm pl-8 text-gray-600">
-                        <Link href={`/campaigns/${projectId}`} className="text-blue-600 hover:underline">
-                          {displayName}
-                        </Link>
-                        <span className="text-gray-400 ml-1 text-xs">({costLabel})</span>
-                      </TableCell>
-                      {adjustedData.map(d => {
-                        const val = getMonthValue(details.map(x => ({ month: x.month, amount: x.amount })), d.month)
-                        return (
-                          <TableCell key={d.month} className="text-right text-sm tabular-nums text-gray-600">
-                            {val === 0 ? '—' : formatCurrency(val)}
-                          </TableCell>
-                        )
-                      })}
-                      <TableCell className="text-right text-sm tabular-nums bg-blue-50 text-gray-600">
-                        {formatCurrency(sumDetails(details.map(x => ({ month: x.month, amount: x.amount })), '2025'))}
-                      </TableCell>
-                      <TableCell className="text-right text-sm tabular-nums bg-blue-50 text-gray-600">
-                        {formatCurrency(sumDetails(details.map(x => ({ month: x.month, amount: x.amount })), '2026'))}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </React.Fragment>
-              )
-            })}
+            {/* 【非案件コスト】セクション */}
+            <TableRow className="bg-gray-50">
+              <TableCell className="sticky left-0 z-10 bg-gray-50 text-xs font-medium text-gray-500 pl-4" colSpan={1}>
+                【非案件コスト】
+              </TableCell>
+              {adjustedData.map(d => <TableCell key={d.month} />)}
+              <TableCell className="bg-blue-50" />
+              <TableCell className="bg-blue-50" />
+            </TableRow>
+            {NON_PROJECT_COST_ROWS.map(renderCostRow)}
 
             {/* コスト合計 */}
             <TableRow className="border-t-2">

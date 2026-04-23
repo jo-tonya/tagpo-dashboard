@@ -1,6 +1,6 @@
 import { notFound } from 'next/navigation'
 import { CampaignForm } from '@/components/campaigns/campaign-form'
-import { getCampaign, getCampaignSubcontracts } from '@/lib/data/campaigns'
+import { getCampaign, getCampaignSubcontracts, getCampaignCosts } from '@/lib/data/campaigns'
 
 export default async function CampaignDetailPage({
   params,
@@ -15,6 +15,15 @@ export default async function CampaignDetailPage({
   if (!campaign) notFound()
 
   const subcontracts = await getCampaignSubcontracts(campaignId)
+  const costs = await getCampaignCosts(campaignId)
+  const adDeliveryAmount = costs.find(c => c.cost_type === 'ad_delivery')?.amount ?? null
 
-  return <CampaignForm campaign={campaign} subcontracts={subcontracts} mode="edit" />
+  return (
+    <CampaignForm
+      campaign={campaign}
+      subcontracts={subcontracts}
+      initialAdDeliveryAmount={adDeliveryAmount}
+      mode="edit"
+    />
+  )
 }

@@ -42,6 +42,7 @@ function NumericInput({ value, onChange, step, readOnly, className, ...props }: 
 interface CampaignFormProps {
   campaign?: Campaign
   subcontracts?: CampaignSubcontract[]
+  initialAdDeliveryAmount?: number | null
   mode: 'create' | 'edit'
 }
 
@@ -60,12 +61,11 @@ interface SubcontractEntry {
   sort_order: number
   company_name: string
   delegated_amount: string
-  delegated_budget: string
   delegated_revenue: string
   notes: string
 }
 
-export function CampaignForm({ campaign, subcontracts: initialSubs, mode }: CampaignFormProps) {
+export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDeliveryAmount, mode }: CampaignFormProps) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
 
@@ -87,6 +87,7 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, mode }: Camp
     review_unit_price: campaign?.review_unit_price?.toString() || '',
     user_reward_unit_price: campaign?.user_reward_unit_price?.toString() || '',
     user_reward_amount: campaign?.user_reward_amount?.toString() || '',
+    ad_delivery_amount: initialAdDeliveryAmount != null ? initialAdDeliveryAmount.toString() : '',
     // Budget
     budget: campaign?.budget?.toString() || '',
     unit_price: campaign?.unit_price?.toString() || '',
@@ -110,7 +111,6 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, mode }: Camp
           sort_order: s.sort_order,
           company_name: s.company_name,
           delegated_amount: s.delegated_amount.toString(),
-          delegated_budget: s.delegated_budget.toString(),
           delegated_revenue: s.delegated_revenue.toString(),
           notes: s.notes || '',
         }))
@@ -145,7 +145,6 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, mode }: Camp
       sort_order: subs.length + 1,
       company_name: '',
       delegated_amount: '',
-      delegated_budget: '',
       delegated_revenue: '',
       notes: '',
     }])
@@ -201,7 +200,6 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, mode }: Camp
           sort_order: s.sort_order,
           company_name: s.company_name,
           delegated_amount: parseFloat(s.delegated_amount) || 0,
-          delegated_budget: parseFloat(s.delegated_budget) || 0,
           delegated_revenue: parseFloat(s.delegated_revenue) || 0,
           notes: s.notes || null,
         })),
@@ -216,11 +214,19 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, mode }: Camp
         if (res.ok) {
           const data = await res.json()
           const rewardAmount = form.user_reward_amount ? parseFloat(form.user_reward_amount) : null
-          await fetch(`/api/campaigns/${data.id}/sync-reward-cost`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ amount: rewardAmount }),
-          })
+          const adAmount = form.ad_delivery_amount ? parseFloat(form.ad_delivery_amount) : null
+          await Promise.all([
+            fetch(`/api/campaigns/${data.id}/sync-reward-cost`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ amount: rewardAmount }),
+            }),
+            fetch(`/api/campaigns/${data.id}/sync-ad-delivery-cost`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ amount: adAmount }),
+            }),
+          ])
           toast.success('案件を作成しました')
           router.push(`/campaigns/${data.id}`)
         } else {
@@ -233,11 +239,18 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, mode }: Camp
           body: JSON.stringify(campaignData),
         })
         if (res.ok) {
-          await fetch(`/api/campaigns/${campaign!.id}/sync-reward-cost`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ amount: form.user_reward_amount ? parseFloat(form.user_reward_amount) : null }),
-          })
+          await Promise.all([
+            fetch(`/api/campaigns/${campaign!.id}/sync-reward-cost`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ amount: form.user_reward_amount ? parseFloat(form.user_reward_amount) : null }),
+            }),
+            fetch(`/api/campaigns/${campaign!.id}/sync-ad-delivery-cost`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ amount: form.ad_delivery_amount ? parseFloat(form.ad_delivery_amount) : null }),
+            }),
+          ])
           toast.success('保存しました')
           router.refresh()
         } else {
@@ -443,6 +456,13 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, mode }: Camp
                   空欄 = 必要再生回数({formatNumber(requiredViews)}) × 報酬単価(¥{form.user_reward_unit_price || '—'}) で自動算出
                 </p>
               </div>
+              <div className="space-y-2">
+                <Label>広告配信費</Label>
+                <NumericInput value={form.ad_delivery_amount} onChange={v => setForm(p => ({ ...p, ad_delivery_amount: v }))} />
+                <p className="text-xs text-gray-400">
+                  PL の「広告配信費」行に再生完了月で計上されます
+                </p>
+              </div>
             </CardContent>
           </Card>
 
@@ -481,14 +501,10 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, mode }: Camp
                       <Input type="number" value={sub.delegated_amount} onChange={e => updateSub(idx, 'delegated_amount', e.target.value)} />
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs">委託分予算</Label>
-                      <Input type="number" value={sub.delegated_budget} onChange={e => updateSub(idx, 'delegated_budget', e.target.value)} />
-                    </div>
-                    <div className="space-y-1">
                       <Label className="text-xs">委託分売上</Label>
                       <Input type="number" value={sub.delegated_revenue} onChange={e => updateSub(idx, 'delegated_revenue', e.target.value)} />
                     </div>
-                    <div className="space-y-1 col-span-2 md:col-span-3">
+                    <div className="space-y-1 col-span-2 md:col-span-4">
                       <Label className="text-xs">備考</Label>
                       <Input value={sub.notes} onChange={e => updateSub(idx, 'notes', e.target.value)} />
                     </div>

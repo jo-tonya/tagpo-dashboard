@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { MonthlyPL, RevenueDetail, CostDetail } from '../types'
 
 export interface CostStatusDetail {
-  source: 'e_guardian' | 'personnel' | 'user_reward'
+  source: 'e_guardian' | 'personnel' | 'user_reward' | 'subcontract' | 'ad_delivery'
   target_month: string
   amount: number
   status: string
@@ -23,8 +23,9 @@ export async function getMonthlyPL(): Promise<MonthlyPL[]> {
     revenue: Number(row.revenue) || 0,
     e_guardian_cost: Number(row.e_guardian_cost) || 0,
     personnel_cost: Number(row.personnel_cost) || 0,
-    user_reward_cost: 0,
-    project_cost: Number(row.project_cost) || 0,
+    user_reward_cost: Number(row.user_reward_cost) || 0,
+    subcontract_cost: Number(row.subcontract_cost) || 0,
+    ad_delivery_cost: Number(row.ad_delivery_cost) || 0,
     total_cost: Number(row.total_cost) || 0,
     operating_profit: Number(row.operating_profit) || 0,
   }))
@@ -98,14 +99,17 @@ export async function getCostStatusDetails(): Promise<CostStatusDetail[]> {
     })
   }
 
-  // ユーザー報酬（campaign_costs + campaigns.certainty）
-  const { data: rewardData } = await supabase
+  // 案件由来コスト（campaign_costs + campaigns.certainty）を cost_type で振り分け
+  //   tonya_user_payment       → user_reward
+  //   subcontract_1/2/3        → subcontract
+  //   ad_delivery              → ad_delivery
+  const { data: ccData } = await supabase
     .from('campaign_costs')
-    .select('target_month, amount, campaign_id')
-    .eq('cost_type', 'tonya_user_payment')
+    .select('target_month, amount, campaign_id, cost_type')
+    .in('cost_type', ['tonya_user_payment', 'subcontract_1', 'subcontract_2', 'subcontract_3', 'ad_delivery'])
 
-  if (rewardData && rewardData.length > 0) {
-    const campaignIds = rewardData.map(r => r.campaign_id)
+  if (ccData && ccData.length > 0) {
+    const campaignIds = Array.from(new Set(ccData.map(r => r.campaign_id)))
     const { data: campaignData } = await supabase
       .from('campaigns')
       .select('id, certainty')
@@ -114,9 +118,14 @@ export async function getCostStatusDetails(): Promise<CostStatusDetail[]> {
     for (const c of campaignData || []) {
       certaintyMap[c.id] = c.certainty || '未確定'
     }
-    for (const row of rewardData) {
+    for (const row of ccData) {
+      if (!row.target_month) continue
+      let source: CostStatusDetail['source']
+      if (row.cost_type === 'tonya_user_payment') source = 'user_reward'
+      else if (row.cost_type === 'ad_delivery') source = 'ad_delivery'
+      else source = 'subcontract'
       results.push({
-        source: 'user_reward',
+        source,
         target_month: row.target_month,
         amount: Number(row.amount) || 0,
         status: certaintyMap[row.campaign_id] || '未確定',
