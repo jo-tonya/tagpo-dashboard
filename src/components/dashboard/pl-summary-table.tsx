@@ -140,8 +140,13 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
     details,
   }))
 
+  // 「案件コスト（原価）」行の内訳からユーザー報酬（tonya_user_payment）を除外する。
+  // ユーザー報酬は独立した行として既に表示されており、dataWithReward 側で
+  // project_cost から減算済みのため、内訳にも残すとダブルカウント表示になる。
+  const projectCostDetails = costDetails.filter(cd => cd.cost_type !== 'tonya_user_payment')
+
   // Cost details grouped by project + cost_label
-  const costByProjectLabel = costDetails.reduce<Record<string, CostDetail[]>>((acc, cd) => {
+  const costByProjectLabel = projectCostDetails.reduce<Record<string, CostDetail[]>>((acc, cd) => {
     const key = `${cd.campaign_id}::${cd.cost_label}`
     if (!acc[key]) acc[key] = []
     acc[key].push(cd)
