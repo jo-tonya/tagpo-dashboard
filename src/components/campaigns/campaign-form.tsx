@@ -81,7 +81,6 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, mode }: Camp
     influencers: campaign?.influencers || '',
     memo: campaign?.memo || '',
     // PL
-    billing_month: campaign?.billing_month?.slice(0, 7) || '',
     retail_margin: campaign?.retail_margin != null ? (campaign.retail_margin * 100).toString() : '',
     agency_margin: campaign?.agency_margin != null ? (campaign.agency_margin * 100).toString() : '',
     product_unit_price: campaign?.product_unit_price?.toString() || '',
@@ -190,7 +189,6 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, mode }: Camp
         view_complete: milestones.view_complete || null,
         report_send: milestones.report_send || null,
         // PL
-        billing_month: form.billing_month ? `${form.billing_month}-01` : null,
         billing_amount: computedRevenue > 0 ? Math.round(computedRevenue) : null,
         retail_margin: form.retail_margin ? parseFloat(form.retail_margin) / 100 : null,
         agency_margin: form.agency_margin ? parseFloat(form.agency_margin) / 100 : null,
@@ -420,10 +418,7 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, mode }: Camp
               <div className="space-y-2">
                 <Label>売上（自動）</Label>
                 <Input type="text" value={computedRevenue > 0 ? formatCurrency(Math.round(computedRevenue)) : ''} readOnly className="bg-gray-100" />
-              </div>
-              <div className="space-y-2">
-                <Label>請求月</Label>
-                <Input type="month" value={form.billing_month} onChange={e => setForm(p => ({ ...p, billing_month: e.target.value }))} />
+                <p className="text-xs text-orange-600">※ PL に反映させるには「再生完了」日の入力が必要です（再生完了月＝請求月として扱われます）</p>
               </div>
               <div className="space-y-2">
                 <Label>投稿者数</Label>

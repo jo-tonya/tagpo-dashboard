@@ -36,9 +36,13 @@ export async function POST(
 
   const { data: campaign } = await supabase
     .from('campaigns')
-    .select('billing_month')
+    .select('view_complete')
     .eq('id', campaignId)
     .single()
+
+  const targetMonth = campaign?.view_complete
+    ? `${campaign.view_complete.slice(0, 7)}-01`
+    : null
 
   const { data: existing } = await supabase
     .from('campaign_costs')
@@ -52,7 +56,7 @@ export async function POST(
       .from('campaign_costs')
       .update({
         amount: finalAmount,
-        target_month: campaign?.billing_month || null,
+        target_month: targetMonth,
       })
       .eq('id', existing.id)
   } else {
@@ -63,7 +67,7 @@ export async function POST(
         cost_type: 'tonya_user_payment',
         cost_label: 'ユーザー報酬',
         amount: finalAmount,
-        target_month: campaign?.billing_month || null,
+        target_month: targetMonth,
       })
   }
 

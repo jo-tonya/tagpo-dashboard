@@ -1,12 +1,13 @@
 import { createClient } from '@/lib/supabase/server'
-import { Campaign, CampaignSubcontract, CampaignCost } from '../types'
+import { Campaign, CampaignSubcontract, CampaignCost, getBillingMonth } from '../types'
 
 export async function getCampaigns(): Promise<Campaign[]> {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('campaigns')
     .select('*')
-    .order('billing_month', { ascending: true, nullsFirst: false })
+    .order('view_complete', { ascending: true, nullsFirst: false })
+    .order('id', { ascending: true })
   if (error) throw error
   return data || []
 }
@@ -87,15 +88,16 @@ export async function createCampaign(
     const rows = subcontracts.map(s => ({ ...s, campaign_id: campaign.id }))
     await supabase.from('campaign_subcontracts').insert(rows)
 
-    // campaign_costs にも連動
+    // campaign_costs にも連動（再生完了月を target_month とする）
+    const billingMonth = getBillingMonth(campaign)
     for (const sub of subcontracts) {
-      if (sub.delegated_amount > 0 && campaign.billing_month) {
+      if (sub.delegated_amount > 0 && billingMonth) {
         await supabase.from('campaign_costs').insert({
           campaign_id: campaign.id,
           cost_type: `subcontract_${sub.sort_order}`,
           cost_label: `${sub.company_name} 支払額`,
           amount: sub.delegated_amount,
-          target_month: campaign.billing_month,
+          target_month: billingMonth,
         })
       }
     }
@@ -134,7 +136,7 @@ export async function updateCampaign(
 
       for (const sub of subcontracts) {
         if (sub.delegated_amount > 0) {
-          const targetMonth = campaign.billing_month || cleanData.billing_month
+          const targetMonth = getBillingMonth(campaign) || getBillingMonth(cleanData as Campaign)
           if (targetMonth) {
             await supabase.from('campaign_costs').insert({
               campaign_id: id,

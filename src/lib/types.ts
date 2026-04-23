@@ -30,7 +30,6 @@ export interface Campaign {
   report_send: string | null
   memo: string
   // PL連携用（新規追加カラム）
-  billing_month: string | null
   billing_amount: number | null
   retail_margin: number | null
   agency_margin: number | null
@@ -46,6 +45,13 @@ export interface Campaign {
 // 表示名の算出（ヘルパー関数）
 export function campaignDisplayName(c: Campaign): string {
   return `${c.maker} ${c.product}`
+}
+
+// 再生完了月（YYYY-MM-DD 形式、月初）を返す。view_complete が未設定なら null。
+// 旧 campaigns.billing_month カラムの代わりに、view_complete から請求月を算出する。
+export function getBillingMonth(c: Pick<Campaign, 'view_complete'>): string | null {
+  if (!c.view_complete) return null
+  return `${c.view_complete.slice(0, 7)}-01`
 }
 
 // CampaignSubcontract（旧 ProjectSubcontract）

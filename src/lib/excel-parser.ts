@@ -166,6 +166,10 @@ function parseProjectBlocks(workbook: XLSX.WorkBook, result: ImportResult) {
     if (Object.keys(details).length > 0) result.project_details.push(details)
     costs.forEach(c => result.project_costs.push(c))
     // v2: 外注先の委託金額をproject_costsに自動連動
+    // target_month は view_complete の月（YYYY-MM-01）。未設定なら null。
+    const projectBillingMonth = project.view_complete
+      ? `${(project.view_complete as string).slice(0, 7)}-01`
+      : null
     subcontracts.forEach((s, idx) => {
       result.project_subcontracts.push(s)
       if (s.delegated_amount && (s.delegated_amount as number) > 0) {
@@ -173,7 +177,7 @@ function parseProjectBlocks(workbook: XLSX.WorkBook, result: ImportResult) {
           cost_type: `subcontract_${idx + 1}`,
           cost_label: `${s.company_name} 支払額`,
           amount: s.delegated_amount,
-          target_month: project.billing_month || null,
+          target_month: projectBillingMonth,
           note: null,
         })
       }
@@ -193,7 +197,8 @@ function mapProjectField(
   row: Row,
 ) {
   // 基本情報
-  if (fieldName.includes('請求月')) project.billing_month = dateToMonth(value)
+  // 請求月カラムは廃止（view_complete から算出する運用に変更）。Excel に「請求月」列があっても無視する。
+  if (fieldName.includes('請求月')) { /* ignored - billing_month removed; use view_complete */ }
   else if (fieldName.includes('請求先')) project.client = str(value)
   else if (fieldName.includes('請求金額')) project.billing_amount = num(value)
   else if (fieldName.includes('請求書受け取り月')) { /* ignored - field removed */ }

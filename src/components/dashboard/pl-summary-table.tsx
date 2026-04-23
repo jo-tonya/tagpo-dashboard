@@ -134,11 +134,14 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
     return acc
   }, {})
 
-  const revenueProjects = Object.entries(revenueByProject).map(([projectId, details]) => ({
-    projectId,
-    displayName: details[0].display_name,
-    details,
-  }))
+  const revenueProjects = Object.entries(revenueByProject)
+    .map(([projectId, details]) => ({
+      projectId,
+      displayName: details[0].display_name,
+      details,
+      earliestMonth: details.reduce((min, d) => d.month < min ? d.month : min, details[0].month),
+    }))
+    .sort((a, b) => a.earliestMonth.localeCompare(b.earliestMonth))
 
   // 「案件コスト（原価）」行の内訳からユーザー報酬（tonya_user_payment）を除外する。
   // ユーザー報酬は独立した行として既に表示されており、dataWithReward 側で
@@ -153,13 +156,16 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
     return acc
   }, {})
 
-  const costGroups = Object.entries(costByProjectLabel).map(([compositeKey, details]) => ({
-    compositeKey,
-    projectId: details[0].campaign_id,
-    displayName: details[0].display_name,
-    costLabel: details[0].cost_label,
-    details,
-  }))
+  const costGroups = Object.entries(costByProjectLabel)
+    .map(([compositeKey, details]) => ({
+      compositeKey,
+      projectId: details[0].campaign_id,
+      displayName: details[0].display_name,
+      costLabel: details[0].cost_label,
+      details,
+      earliestMonth: details.reduce((min, d) => d.month < min ? d.month : min, details[0].month),
+    }))
+    .sort((a, b) => a.earliestMonth.localeCompare(b.earliestMonth))
 
   function getMonthValue(details: { month: string; billing_amount?: number; amount?: number }[], month: string): number {
     const found = details.find(d => d.month === month)

@@ -117,20 +117,20 @@ export function MilestoneDashboard({ campaigns, initialChecks }: MilestoneDashbo
   const totalBudget = useMemo(() => campaigns.reduce((sum, c) => sum + (c.budget || 0), 0), [campaigns])
   const confirmedBudget = useMemo(() => campaigns.filter(c => c.certainty === '確定').reduce((sum, c) => sum + (c.budget || 0), 0), [campaigns])
 
-  // Monthly revenue (current month) — billing_month preferred, fallback to post_end month
+  // Monthly revenue (current month) — view_complete preferred, fallback to post_end month
   const currentMonth = useMemo(() => {
     const now = new Date()
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   }, [])
   const monthlyRevenue = useMemo(() => {
     return campaigns.filter(c => {
-      const m = c.billing_month?.slice(0, 7) || c.post_end?.slice(0, 7)
+      const m = c.view_complete?.slice(0, 7) || c.post_end?.slice(0, 7)
       return m === currentMonth
     }).reduce((sum, c) => sum + (c.billing_amount || c.budget || 0), 0)
   }, [campaigns, currentMonth])
   const confirmedMonthlyRevenue = useMemo(() => {
     return campaigns.filter(c => {
-      const m = c.billing_month?.slice(0, 7) || c.post_end?.slice(0, 7)
+      const m = c.view_complete?.slice(0, 7) || c.post_end?.slice(0, 7)
       return m === currentMonth && c.certainty === '確定'
     }).reduce((sum, c) => sum + (c.billing_amount || c.budget || 0), 0)
   }, [campaigns, currentMonth])

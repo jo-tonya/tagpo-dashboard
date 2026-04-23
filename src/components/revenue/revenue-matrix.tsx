@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Campaign, campaignDisplayName } from '@/lib/types'
+import { Campaign, campaignDisplayName, getBillingMonth } from '@/lib/types'
 import { formatCurrency, formatMonth } from '@/lib/calculations'
 import {
   Table,
@@ -34,7 +34,7 @@ export function RevenueMatrix({ campaigns }: RevenueMatrixProps) {
   const monthlyTotals: Record<string, number> = {}
   for (const month of MONTHS) {
     monthlyTotals[month] = withBilling
-      .filter(c => c.billing_month === month)
+      .filter(c => getBillingMonth(c) === month)
       .reduce((sum, c) => sum + (c.billing_amount ?? 0), 0)
   }
 
@@ -76,7 +76,7 @@ export function RevenueMatrix({ campaigns }: RevenueMatrixProps) {
                 </TableCell>
                 {MONTHS.map((month) => {
                   const amount =
-                    campaign.billing_month === month ? campaign.billing_amount : null
+                    getBillingMonth(campaign) === month ? campaign.billing_amount : null
                   return (
                     <TableCell key={month} className="text-right text-sm tabular-nums">
                       {amount != null && amount > 0 ? formatCurrency(amount) : '—'}

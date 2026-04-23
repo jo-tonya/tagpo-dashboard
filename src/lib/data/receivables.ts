@@ -17,8 +17,8 @@ export async function getReceivables(month?: string): Promise<ReceivableItem[]> 
 
   const { data: campaigns } = await supabase
     .from('campaigns')
-    .select('id, maker, product, billing_month, billing_amount, certainty')
-    .not('billing_month', 'is', null)
+    .select('id, maker, product, view_complete, billing_amount, certainty')
+    .not('view_complete', 'is', null)
     .not('billing_amount', 'is', null)
 
   const { data: receivables } = await supabase
@@ -32,7 +32,8 @@ export async function getReceivables(month?: string): Promise<ReceivableItem[]> 
 
   const items: ReceivableItem[] = []
   for (const c of campaigns || []) {
-    const [y, m] = (c.billing_month as string).split('-').map(Number)
+    const billingMonthStr = `${(c.view_complete as string).slice(0, 7)}-01`
+    const [y, m] = (c.view_complete as string).slice(0, 7).split('-').map(Number)
     const nm = m === 12 ? 1 : m + 1
     const ny = m === 12 ? y + 1 : y
     const receiveMonth = `${ny}-${String(nm).padStart(2, '0')}-01`
@@ -45,7 +46,7 @@ export async function getReceivables(month?: string): Promise<ReceivableItem[]> 
       id: (existing?.id as string) || `auto-${c.id}`,
       campaignId: c.id,
       campaignName: `${c.maker} ${c.product}`,
-      billingMonth: c.billing_month as string,
+      billingMonth: billingMonthStr,
       receiveMonth,
       expectedAmount: Number(c.billing_amount),
       actualAmount: existing?.actual_amount ? Number(existing.actual_amount) : null,

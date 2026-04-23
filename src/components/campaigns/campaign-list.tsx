@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Campaign } from '@/lib/types'
+import { Campaign, getBillingMonth } from '@/lib/types'
 import { calcUserRewardAmount, formatCurrency, formatMonth } from '@/lib/calculations'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -114,7 +114,7 @@ export function CampaignList({ campaigns }: CampaignListProps) {
             <TableRow>
               <TableHead>案件名</TableHead>
               <TableHead>メーカー</TableHead>
-              <TableHead className="text-right">請求月</TableHead>
+              <TableHead className="text-right">請求月（再生完了月）</TableHead>
               <TableHead className="text-right">請求金額</TableHead>
               <TableHead className="text-right">ユーザー報酬額</TableHead>
               <TableHead className="text-center">ステータス</TableHead>
@@ -139,7 +139,7 @@ export function CampaignList({ campaigns }: CampaignListProps) {
                     </Link>
                   </TableCell>
                   <TableCell className="text-gray-600">{campaign.maker}</TableCell>
-                  <TableCell className="text-right text-sm">{formatMonth(campaign.billing_month)}</TableCell>
+                  <TableCell className="text-right text-sm">{formatMonth(getBillingMonth(campaign))}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatCurrency(campaign.billing_amount)}</TableCell>
                   <TableCell className="text-right" onClick={e => e.stopPropagation()}>
                     <InlineRewardInput
