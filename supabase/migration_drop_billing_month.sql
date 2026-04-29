@@ -27,7 +27,10 @@ ALTER TABLE campaign_subcontracts DROP COLUMN IF EXISTS delegated_budget;
 --        user_reward_cost : campaign_costs(cost_type='tonya_user_payment')
 --        subcontract_cost : campaign_costs(cost_type IN subcontract_1..3)
 --        ad_delivery_cost : campaign_costs(cost_type='ad_delivery')
-CREATE OR REPLACE VIEW monthly_pl_view AS
+--      旧 view から列名が変わるため CREATE OR REPLACE VIEW では PostgreSQL 42P16 エラーに
+--      なる（CREATE OR REPLACE は列名変更不可）。先に DROP してから CREATE する。
+DROP VIEW IF EXISTS monthly_pl_view;
+CREATE VIEW monthly_pl_view AS
 WITH months AS (
   SELECT generate_series('2025-11-01'::date, '2026-12-01'::date, '1 month')::date AS month
 ),
