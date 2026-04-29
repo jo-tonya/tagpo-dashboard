@@ -13,3 +13,14 @@ CREATE TABLE IF NOT EXISTS monthly_budgets (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- RLS: 既存テーブル（campaigns, fixed_costs 等）と同じく
+--   「authenticated ロールのみ全操作可」の単一ポリシーを付与する。
+--   既存スキーマ schema.sql の DO $$ ループと同じパターン。
+ALTER TABLE monthly_budgets ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "auth_full_access" ON monthly_budgets;
+CREATE POLICY "auth_full_access" ON monthly_budgets
+  FOR ALL
+  USING (auth.role() = 'authenticated')
+  WITH CHECK (auth.role() = 'authenticated');
