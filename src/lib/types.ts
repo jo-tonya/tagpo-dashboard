@@ -153,6 +153,14 @@ export interface Invoice {
   campaign_id: number | null
 }
 
+// MonthlyBudget — /budgets で月単位に入力（売上予算・粗利率）
+export interface MonthlyBudget {
+  month: string                // 'YYYY-MM-01'
+  revenue: number              // 売上予算（円）
+  gross_margin_rate: number    // 0.0 〜 1.0（DB は NUMERIC(5,4)）
+  note: string | null
+}
+
 // MonthlyPL — ビューから取得
 // project_cost を user_reward_cost / subcontract_cost / ad_delivery_cost に分解。
 export interface MonthlyPL {

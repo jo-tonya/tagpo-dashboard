@@ -11,20 +11,22 @@ import {
   Receipt,
   Shield,
   UserCog,
-  CreditCard,
   ArrowDownToLine,
   Upload,
+  Target,
 } from 'lucide-react'
 
 const navItems = [
   { href: '/', label: 'ダッシュボード', icon: LayoutDashboard },
+  { href: '/budgets', label: '予算管理', icon: Target },
   { href: '/milestones', label: '案件進行管理', icon: ListChecks },
   { href: '/campaigns', label: '案件一覧', icon: FolderKanban },
   { href: '/revenue', label: '事業収入', icon: TrendingUp },
   { href: '/costs', label: '事業コスト', icon: Receipt },
   { href: '/e-guardian', label: 'イー・ガーディアン', icon: Shield },
   { href: '/personnel', label: '人件費管理', icon: UserCog },
-  { href: '/payments', label: '支払い管理', icon: CreditCard },
+  // 「支払い管理」は現在サイドバー非表示。ページ自体は /payments に残置（将来復活時の手順は
+  // src/app/(authenticated)/payments/page.tsx の冒頭コメント参照）。
   { href: '/receivables', label: '入金管理', icon: ArrowDownToLine },
   { href: '/import', label: 'インポート', icon: Upload },
 ]

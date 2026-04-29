@@ -245,7 +245,7 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
     <Card>
       <CardHeader>
         <div className="flex items-center gap-4">
-          <CardTitle className="text-lg">月次PLサマリー</CardTitle>
+          <CardTitle className="text-lg">月次PL</CardTitle>
           <div className="flex gap-2">
             <Button
               variant={viewMode === 'all' ? 'default' : 'outline'}

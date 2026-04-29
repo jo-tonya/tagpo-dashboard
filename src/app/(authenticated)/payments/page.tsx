@@ -1,3 +1,6 @@
+// このページは現在サイドバーから非表示にしている。
+// 復活させる場合は src/components/layout/sidebar.tsx の navItems に
+// { href: '/payments', label: '支払い管理', icon: CreditCard } を追加するだけで OK。
 import { PaymentList } from '@/components/payments/payment-list'
 
 export default function PaymentsPage() {
