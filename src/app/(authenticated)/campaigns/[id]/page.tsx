@@ -17,12 +17,14 @@ export default async function CampaignDetailPage({
   const subcontracts = await getCampaignSubcontracts(campaignId)
   const costs = await getCampaignCosts(campaignId)
   const adDeliveryAmount = costs.find(c => c.cost_type === 'ad_delivery')?.amount ?? null
+  const miscAmount = costs.find(c => c.cost_type === 'misc')?.amount ?? null
 
   return (
     <CampaignForm
       campaign={campaign}
       subcontracts={subcontracts}
       initialAdDeliveryAmount={adDeliveryAmount}
+      initialMiscAmount={miscAmount}
       mode="edit"
     />
   )

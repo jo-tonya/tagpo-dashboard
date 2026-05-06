@@ -90,7 +90,7 @@ export function calcGrossProfit(params: {
 
 /**
  * ユーザー報酬額を算出
- * 手動値があればそれを使い、なければ 必要再生回数 × ユーザー報酬単価
+ * 手動値があればそれを使い、なければ 必要再生回数 × ユーザー報酬単価（デフォルト 0.4）
  */
 export function calcUserRewardAmount(
   manualAmount: number | null,
@@ -99,9 +99,72 @@ export function calcUserRewardAmount(
   userRewardUnitPrice: number | null
 ): number | null {
   if (manualAmount != null && manualAmount > 0) return manualAmount
-  if (!budget || !unitPrice || !userRewardUnitPrice) return null
+  if (!budget || !unitPrice) return null
+  const rewardRate = userRewardUnitPrice ?? 0.4
   const requiredViews = calcRequiredViews(budget, unitPrice)
-  return Math.round(requiredViews * userRewardUnitPrice)
+  return Math.round(requiredViews * rewardRate)
+}
+
+/**
+ * 案件粗利サマリーの精緻計算（v3 売上=予算モデル）
+ *
+ *   売上     = budget
+ *   原価     = ① 審査費 + ② ユーザー報酬 + ③ 商品代 + ④ 外注代理店フィー + ⑤ 広告配信費 + ⑥ その他諸経費
+ *   粗利     = 売上 - 原価合計
+ *   販管費   = 小売マージン額 + 代理店マージン額（営業代理店フィー）
+ *   営業利益 = 粗利 - 販管費
+ *
+ *   ① 審査費       = targetPosts × reviewUnitPrice（デフォルト 1000）
+ *   ② ユーザー報酬 = manualUserReward があればそれ、無ければ requiredViews × userRewardUnitPrice（デフォルト 0.4）
+ *   ③ 商品代       = targetPosts × productUnitPrice
+ *   ④ 外注代理店フィー = subcontractFee（Σ delegated_amount）
+ *   ⑤ 広告配信費   = adDeliveryCost
+ *   ⑥ その他諸経費 = miscCost
+ */
+export function calcCampaignProfit(params: {
+  budget: number
+  unitPrice: number
+  avgViews: number
+  retailMargin: number       // %
+  agencyMargin: number       // %
+  productUnitPrice: number
+  reviewUnitPrice: number    // デフォルト 1000 を呼び出し側で渡す
+  userRewardUnitPrice: number  // デフォルト 0.4 を呼び出し側で渡す
+  manualUserReward: number | null
+  subcontractFee: number
+  adDeliveryCost: number
+  miscCost: number
+}) {
+  const requiredViews = calcRequiredViews(params.budget, params.unitPrice)
+  const targetPosts = calcTargetPosts(requiredViews, params.avgViews)
+
+  const reviewCost = Math.round(targetPosts * params.reviewUnitPrice)
+  const userReward = params.manualUserReward != null && params.manualUserReward > 0
+    ? params.manualUserReward
+    : Math.round(requiredViews * params.userRewardUnitPrice)
+  const productCost = Math.round(targetPosts * params.productUnitPrice)
+  const subcontract = params.subcontractFee
+  const adDelivery = params.adDeliveryCost
+  const misc = params.miscCost
+  const totalCost = reviewCost + userReward + productCost + subcontract + adDelivery + misc
+
+  const grossProfit = params.budget - totalCost
+  const grossMarginRate = params.budget > 0 ? grossProfit / params.budget : 0
+
+  const retailFee = Math.round(params.budget * (params.retailMargin / 100))
+  const agencyFee = Math.round(params.budget * (params.agencyMargin / 100))
+  const sgaTotal = retailFee + agencyFee
+
+  const operatingProfit = grossProfit - sgaTotal
+  const operatingMarginRate = params.budget > 0 ? operatingProfit / params.budget : 0
+
+  return {
+    requiredViews, targetPosts,
+    reviewCost, userReward, productCost, subcontract, adDelivery, misc, totalCost,
+    grossProfit, grossMarginRate,
+    retailFee, agencyFee, sgaTotal,
+    operatingProfit, operatingMarginRate,
+  }
 }
 
 // ================================

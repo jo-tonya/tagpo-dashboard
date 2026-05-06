@@ -2,7 +2,15 @@ import { createClient } from '@/lib/supabase/server'
 import { MonthlyPL, RevenueDetail, CostDetail } from '../types'
 
 export interface CostStatusDetail {
-  source: 'e_guardian' | 'personnel' | 'user_reward' | 'subcontract' | 'ad_delivery'
+  source:
+    | 'e_guardian'
+    | 'personnel'
+    | 'user_reward'
+    | 'subcontract'
+    | 'ad_delivery'
+    | 'review'
+    | 'product'
+    | 'misc'
   target_month: string
   amount: number
   status: string
@@ -21,11 +29,17 @@ export async function getMonthlyPL(): Promise<MonthlyPL[]> {
   return (data || []).map((row: Record<string, unknown>) => ({
     month: row.month as string,
     revenue: Number(row.revenue) || 0,
-    e_guardian_cost: Number(row.e_guardian_cost) || 0,
-    personnel_cost: Number(row.personnel_cost) || 0,
+    review_cost: Number(row.review_cost) || 0,
     user_reward_cost: Number(row.user_reward_cost) || 0,
+    product_cost: Number(row.product_cost) || 0,
     subcontract_cost: Number(row.subcontract_cost) || 0,
     ad_delivery_cost: Number(row.ad_delivery_cost) || 0,
+    misc_cost: Number(row.misc_cost) || 0,
+    agency_fee_cost: Number(row.agency_fee_cost) || 0,
+    personnel_cost: Number(row.personnel_cost) || 0,
+    e_guardian_cost: Number(row.e_guardian_cost) || 0,
+    cogs_total: Number(row.cogs_total) || 0,
+    sga_total: Number(row.sga_total) || 0,
     total_cost: Number(row.total_cost) || 0,
     operating_profit: Number(row.operating_profit) || 0,
   }))
@@ -103,10 +117,18 @@ export async function getCostStatusDetails(): Promise<CostStatusDetail[]> {
   //   tonya_user_payment       → user_reward
   //   subcontract_1/2/3        → subcontract
   //   ad_delivery              → ad_delivery
+  //   review_cost              → review
+  //   product_cost             → product
+  //   misc                     → misc
   const { data: ccData } = await supabase
     .from('campaign_costs')
     .select('target_month, amount, campaign_id, cost_type')
-    .in('cost_type', ['tonya_user_payment', 'subcontract_1', 'subcontract_2', 'subcontract_3', 'ad_delivery'])
+    .in('cost_type', [
+      'tonya_user_payment',
+      'subcontract_1', 'subcontract_2', 'subcontract_3',
+      'ad_delivery',
+      'review_cost', 'product_cost', 'misc',
+    ])
 
   if (ccData && ccData.length > 0) {
     const campaignIds = Array.from(new Set(ccData.map(r => r.campaign_id)))
@@ -123,6 +145,9 @@ export async function getCostStatusDetails(): Promise<CostStatusDetail[]> {
       let source: CostStatusDetail['source']
       if (row.cost_type === 'tonya_user_payment') source = 'user_reward'
       else if (row.cost_type === 'ad_delivery') source = 'ad_delivery'
+      else if (row.cost_type === 'review_cost') source = 'review'
+      else if (row.cost_type === 'product_cost') source = 'product'
+      else if (row.cost_type === 'misc') source = 'misc'
       else source = 'subcontract'
       results.push({
         source,

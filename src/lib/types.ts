@@ -4,7 +4,15 @@ export type CampaignStatus = '未確定' | 'シート回収済み' | '進行中'
 export type PaymentStatus = '未払い' | '支払い済' | '入金済'
 export type InvoiceDirection = 'outgoing' | 'incoming'
 export type TransferStatus = '未実行' | '実行' | '確認済'
-export type CostType = 'subcontract_1' | 'subcontract_2' | 'subcontract_3' | 'tonya_user_payment' | 'ad_delivery'
+export type CostType =
+  | 'subcontract_1'
+  | 'subcontract_2'
+  | 'subcontract_3'
+  | 'tonya_user_payment'
+  | 'ad_delivery'
+  | 'review_cost'   // 審査費（targetPosts × review_unit_price、デフォ単価1000）
+  | 'product_cost'  // 商品代（targetPosts × product_unit_price）
+  | 'misc'          // その他諸経費（手入力）
 export type CampaignCertainty = '未確定' | '見込み' | '確定'
 
 // Campaign = 旧 Project + 旧 campaigns を統合
@@ -162,15 +170,28 @@ export interface MonthlyBudget {
 }
 
 // MonthlyPL — ビューから取得
-// project_cost を user_reward_cost / subcontract_cost / ad_delivery_cost に分解。
+// 「売上 = budget」モデル v3:
+//   原価6項目（review/user_reward/product/subcontract/ad_delivery/misc）+ cogs_total
+//   販管費2項目（agency_fee/personnel）+ sga_total
+//   e_guardian_cost は EG 実請求額として補足表示用（メイン集計には使わない）
 export interface MonthlyPL {
   month: string
   revenue: number
-  e_guardian_cost: number
-  personnel_cost: number
+  // 原価（COGS, 6 項目）
+  review_cost: number
   user_reward_cost: number
+  product_cost: number
   subcontract_cost: number
   ad_delivery_cost: number
+  misc_cost: number
+  // 販管費（SG&A, 2 項目）
+  agency_fee_cost: number
+  personnel_cost: number
+  // 補足（メイン集計外）
+  e_guardian_cost: number
+  // 集計値
+  cogs_total: number
+  sga_total: number
   total_cost: number
   operating_profit: number
 }

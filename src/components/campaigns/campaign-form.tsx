@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Campaign, CampaignSubcontract, campaignDisplayName } from '@/lib/types'
-import { calcRevenue, calcGuaranteedViews, calcSelfRevenue, calcRequiredViews, calcTargetPosts, formatCurrency, formatPercent, formatNumber } from '@/lib/calculations'
+import { calcGuaranteedViews, calcRequiredViews, calcTargetPosts, calcCampaignProfit, formatCurrency, formatPercent, formatNumber } from '@/lib/calculations'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,40 +11,21 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import { NumericInput } from '@/components/ui/numeric-input'
 import { Save, ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-
-// Numeric input that displays with commas but stores raw number string
-function NumericInput({ value, onChange, step, readOnly, className, ...props }: {
-  value: string; onChange?: (val: string) => void; step?: string; readOnly?: boolean; className?: string;
-  placeholder?: string;
-}) {
-  const [focused, setFocused] = useState(false)
-  const displayValue = (!focused && value) ? Number(value).toLocaleString('ja-JP') : value
-  return (
-    <Input
-      type="text"
-      inputMode="decimal"
-      value={displayValue}
-      onChange={e => {
-        const raw = e.target.value.replace(/,/g, '')
-        if (raw === '' || /^-?\d*\.?\d*$/.test(raw)) onChange?.(raw)
-      }}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      readOnly={readOnly}
-      className={className}
-      {...props}
-    />
-  )
-}
 
 interface CampaignFormProps {
   campaign?: Campaign
   subcontracts?: CampaignSubcontract[]
   initialAdDeliveryAmount?: number | null
+  initialMiscAmount?: number | null
   mode: 'create' | 'edit'
 }
+
+// 規定値（フォームの placeholder & 計算 fallback）
+const DEFAULT_REVIEW_UNIT_PRICE = 1000      // 投稿人数 × 1,000円
+const DEFAULT_USER_REWARD_UNIT_PRICE = 0.4  // 必要再生回数 × 0.4円
 
 const STATUS_OPTIONS = ['未確定', 'シート回収済み', '進行中', '投稿中', '完了']
 const TYPE_OPTIONS = ['既存', '新商品']
@@ -65,7 +46,7 @@ interface SubcontractEntry {
   notes: string
 }
 
-export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDeliveryAmount, mode }: CampaignFormProps) {
+export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDeliveryAmount, initialMiscAmount, mode }: CampaignFormProps) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
 
@@ -88,6 +69,7 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
     user_reward_unit_price: campaign?.user_reward_unit_price?.toString() || '',
     user_reward_amount: campaign?.user_reward_amount?.toString() || '',
     ad_delivery_amount: initialAdDeliveryAmount != null ? initialAdDeliveryAmount.toString() : '',
+    misc_amount: initialMiscAmount != null ? initialMiscAmount.toString() : '',
     // Budget
     budget: campaign?.budget?.toString() || '',
     unit_price: campaign?.unit_price?.toString() || '',
@@ -117,26 +99,55 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
       : []
   )
 
-  // === Auto calculations ===
+  // === Auto calculations (v3: 売上=予算モデル) ===
   const budget = parseFloat(form.budget) || 0
   const unitPrice = parseFloat(form.unit_price) || 0
   const avgViews = parseFloat(form.avg_views) || 0
-  const retailM = (parseFloat(form.retail_margin) || 0) / 100
-  const agencyM = (parseFloat(form.agency_margin) || 0) / 100
 
   const requiredViews = useMemo(() => budget > 0 && unitPrice > 0 ? calcRequiredViews(budget, unitPrice) : 0, [budget, unitPrice])
   const targetPosts = useMemo(() => requiredViews > 0 && avgViews > 0 ? calcTargetPosts(requiredViews, avgViews) : 0, [requiredViews, avgViews])
   const guaranteedViews = useMemo(() => budget > 0 && unitPrice > 0 ? calcGuaranteedViews(budget, unitPrice) : 0, [budget, unitPrice])
-  const computedRevenue = useMemo(() => budget > 0 ? calcRevenue(budget, retailM, agencyM) : 0, [budget, retailM, agencyM])
-  const userRewardUnitPrice = parseFloat(form.user_reward_unit_price) || 0
-  const rewardAutoCalc = useMemo(() => requiredViews > 0 && userRewardUnitPrice > 0 ? Math.round(requiredViews * userRewardUnitPrice) : 0, [requiredViews, userRewardUnitPrice])
 
-  const subDelegatedRevenue = useMemo(
-    () => subs.map(s => ({ delegatedRevenue: parseFloat(s.delegated_revenue) || 0 })),
+  // 単価のフォーム値（空なら placeholder のデフォルトを使う）
+  const reviewUnitPrice = parseFloat(form.review_unit_price) || DEFAULT_REVIEW_UNIT_PRICE
+  const userRewardUnitPrice = parseFloat(form.user_reward_unit_price) || DEFAULT_USER_REWARD_UNIT_PRICE
+  const productUnitPrice = parseFloat(form.product_unit_price) || 0
+
+  const subcontractFee = useMemo(
+    () => subs.reduce((sum, s) => sum + (parseFloat(s.delegated_amount) || 0), 0),
     [subs]
   )
-  const selfRevenue = useMemo(() => calcSelfRevenue(computedRevenue, subDelegatedRevenue), [computedRevenue, subDelegatedRevenue])
-  const grossMarginRate = budget > 0 ? selfRevenue / budget : 0
+  const adDeliveryCost = parseFloat(form.ad_delivery_amount) || 0
+  const miscCost = parseFloat(form.misc_amount) || 0
+  const manualUserReward = form.user_reward_amount ? parseFloat(form.user_reward_amount) : null
+
+  // 自動計算のユーザー報酬（手動値が無いとき）
+  const rewardAutoCalc = useMemo(() => {
+    if (manualUserReward != null && manualUserReward > 0) return manualUserReward
+    if (requiredViews <= 0) return 0
+    return Math.round(requiredViews * userRewardUnitPrice)
+  }, [requiredViews, userRewardUnitPrice, manualUserReward])
+
+  // 精緻な粗利サマリー
+  const profit = useMemo(() => calcCampaignProfit({
+    budget,
+    unitPrice,
+    avgViews,
+    retailMargin: parseFloat(form.retail_margin) || 0,
+    agencyMargin: parseFloat(form.agency_margin) || 0,
+    productUnitPrice,
+    reviewUnitPrice,
+    userRewardUnitPrice,
+    manualUserReward,
+    subcontractFee,
+    adDeliveryCost,
+    miscCost,
+  }), [
+    budget, unitPrice, avgViews,
+    form.retail_margin, form.agency_margin,
+    productUnitPrice, reviewUnitPrice, userRewardUnitPrice,
+    manualUserReward, subcontractFee, adDeliveryCost, miscCost,
+  ])
 
   // Subcontract handlers
   function addSubcontract() {
@@ -187,8 +198,8 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
         post_end: milestones.post_end || null,
         view_complete: milestones.view_complete || null,
         report_send: milestones.report_send || null,
-        // PL
-        billing_amount: computedRevenue > 0 ? Math.round(computedRevenue) : null,
+        // PL（v3: 売上＝予算モデル。billing_amount は budget をそのまま保存）
+        billing_amount: budget > 0 ? Math.round(budget) : null,
         retail_margin: form.retail_margin ? parseFloat(form.retail_margin) / 100 : null,
         agency_margin: form.agency_margin ? parseFloat(form.agency_margin) / 100 : null,
         product_unit_price: form.product_unit_price ? parseFloat(form.product_unit_price) : null,
@@ -205,6 +216,16 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
         })),
       }
 
+      // 派生コスト（review/product/misc/ad_delivery/user_reward）の同期 payload
+      // ユーザー報酬は手動値があればそれ、無ければ自動計算（profit.userReward）
+      const syncPayload = {
+        userReward: profit.userReward > 0 ? profit.userReward : null,
+        reviewCost: profit.reviewCost > 0 ? profit.reviewCost : null,
+        productCost: profit.productCost > 0 ? profit.productCost : null,
+        adDelivery: adDeliveryCost > 0 ? adDeliveryCost : null,
+        miscCost: miscCost > 0 ? miscCost : null,
+      }
+
       if (mode === 'create') {
         const res = await fetch('/api/campaigns', {
           method: 'POST',
@@ -213,20 +234,11 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
         })
         if (res.ok) {
           const data = await res.json()
-          const rewardAmount = form.user_reward_amount ? parseFloat(form.user_reward_amount) : null
-          const adAmount = form.ad_delivery_amount ? parseFloat(form.ad_delivery_amount) : null
-          await Promise.all([
-            fetch(`/api/campaigns/${data.id}/sync-reward-cost`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ amount: rewardAmount }),
-            }),
-            fetch(`/api/campaigns/${data.id}/sync-ad-delivery-cost`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ amount: adAmount }),
-            }),
-          ])
+          await fetch(`/api/campaigns/${data.id}/sync-campaign-costs`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(syncPayload),
+          })
           toast.success('案件を作成しました')
           router.push(`/campaigns/${data.id}`)
         } else {
@@ -239,18 +251,11 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
           body: JSON.stringify(campaignData),
         })
         if (res.ok) {
-          await Promise.all([
-            fetch(`/api/campaigns/${campaign!.id}/sync-reward-cost`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ amount: form.user_reward_amount ? parseFloat(form.user_reward_amount) : null }),
-            }),
-            fetch(`/api/campaigns/${campaign!.id}/sync-ad-delivery-cost`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ amount: form.ad_delivery_amount ? parseFloat(form.ad_delivery_amount) : null }),
-            }),
-          ])
+          await fetch(`/api/campaigns/${campaign!.id}/sync-campaign-costs`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(syncPayload),
+          })
           toast.success('保存しました')
           router.refresh()
         } else {
@@ -429,8 +434,8 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
                 <NumericInput value={form.agency_margin} onChange={v => setForm(p => ({ ...p, agency_margin: v }))} />
               </div>
               <div className="space-y-2">
-                <Label>売上（自動）</Label>
-                <Input type="text" value={computedRevenue > 0 ? formatCurrency(Math.round(computedRevenue)) : ''} readOnly className="bg-gray-100" />
+                <Label>売上（＝予算）</Label>
+                <Input type="text" value={budget > 0 ? formatCurrency(Math.round(budget)) : ''} readOnly className="bg-gray-100" />
                 <p className="text-xs text-orange-600">※ PL に反映させるには「再生完了」日の入力が必要です（再生完了月＝請求月として扱われます）</p>
               </div>
               <div className="space-y-2">
@@ -443,24 +448,39 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
               </div>
               <div className="space-y-2">
                 <Label>審査単価</Label>
-                <NumericInput value={form.review_unit_price} onChange={v => setForm(p => ({ ...p, review_unit_price: v }))} />
+                <NumericInput
+                  value={form.review_unit_price}
+                  onChange={v => setForm(p => ({ ...p, review_unit_price: v }))}
+                  placeholder={`デフォルト: ${DEFAULT_REVIEW_UNIT_PRICE}`}
+                />
               </div>
               <div className="space-y-2">
                 <Label>ユーザー報酬単価</Label>
-                <NumericInput value={form.user_reward_unit_price} onChange={v => setForm(p => ({ ...p, user_reward_unit_price: v }))} />
+                <NumericInput
+                  value={form.user_reward_unit_price}
+                  onChange={v => setForm(p => ({ ...p, user_reward_unit_price: v }))}
+                  placeholder={`デフォルト: ${DEFAULT_USER_REWARD_UNIT_PRICE}`}
+                />
               </div>
               <div className="space-y-2">
                 <Label>ユーザー報酬額（自動 or 手動）</Label>
                 <NumericInput value={form.user_reward_amount} onChange={v => setForm(p => ({ ...p, user_reward_amount: v }))} placeholder={rewardAutoCalc > 0 ? `自動: ${formatCurrency(rewardAutoCalc)}` : ''} />
                 <p className="text-xs text-gray-400">
-                  空欄 = 必要再生回数({formatNumber(requiredViews)}) × 報酬単価(¥{form.user_reward_unit_price || '—'}) で自動算出
+                  空欄 = 必要再生回数({formatNumber(requiredViews)}) × 報酬単価(¥{form.user_reward_unit_price || DEFAULT_USER_REWARD_UNIT_PRICE}) で自動算出
                 </p>
               </div>
               <div className="space-y-2">
                 <Label>広告配信費</Label>
-                <NumericInput value={form.ad_delivery_amount} onChange={v => setForm(p => ({ ...p, ad_delivery_amount: v }))} />
+                <NumericInput value={form.ad_delivery_amount} onChange={v => setForm(p => ({ ...p, ad_delivery_amount: v }))} integerOnly />
                 <p className="text-xs text-gray-400">
                   PL の「広告配信費」行に再生完了月で計上されます
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>その他諸経費</Label>
+                <NumericInput value={form.misc_amount} onChange={v => setForm(p => ({ ...p, misc_amount: v }))} integerOnly />
+                <p className="text-xs text-gray-400">
+                  PL の「その他諸経費」行に再生完了月で計上されます
                 </p>
               </div>
             </CardContent>
@@ -513,7 +533,7 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
               ))}
               {subs.length > 0 && (
                 <div className="bg-gray-50 rounded p-3 text-sm">
-                  <div className="flex justify-between"><span className="text-gray-600">自社売上</span><span className="font-medium">{formatCurrency(selfRevenue || null)}</span></div>
+                  <div className="flex justify-between"><span className="text-gray-600">外注代理店フィー合計</span><span className="font-medium">{formatCurrency(subcontractFee || null)}</span></div>
                 </div>
               )}
             </CardContent>
@@ -533,40 +553,67 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
           </Card>
         </div>
 
-        {/* Sidebar: Gross Profit Summary */}
+        {/* Sidebar: 粗利サマリー（営業利益まで段階損益） */}
         <div className="space-y-4">
           <Card className="sticky top-20">
             <CardHeader><CardTitle className="text-base">粗利サマリー</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">予算</span>
-                <span className="font-medium tabular-nums">{formatCurrency(budget || null)}</span>
+            <CardContent className="space-y-3 text-sm">
+              <div className="flex justify-between font-medium">
+                <span>売上</span>
+                <span className="tabular-nums">{formatCurrency(budget || null)}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">売上（自動）</span>
-                <span className="font-medium tabular-nums">{formatCurrency(computedRevenue || null)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">自社売上</span>
-                <span className="font-medium tabular-nums">{formatCurrency(selfRevenue || null)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">小売マージン</span>
-                <span className="tabular-nums">{form.retail_margin ? `${form.retail_margin}%` : '—'}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">代理店マージン</span>
-                <span className="tabular-nums">{form.agency_margin ? `${form.agency_margin}%` : '—'}</span>
-              </div>
-              <div className="border-t pt-3">
-                <div className="flex justify-between text-sm font-bold">
-                  <span>粗利率</span>
-                  <span className={`tabular-nums ${grossMarginRate > 0 ? 'text-green-700' : grossMarginRate < 0 ? 'text-red-600' : ''}`}>
-                    {budget > 0 ? formatPercent(grossMarginRate) : '—'}
-                  </span>
+
+              <div className="border-t pt-2 space-y-1">
+                <div className="text-xs font-medium text-gray-500">原価</div>
+                <RowKV label="審査費" value={profit.reviewCost} />
+                <RowKV label="ユーザー報酬" value={profit.userReward} />
+                <RowKV label="商品代" value={profit.productCost} />
+                <RowKV label="外注代理店フィー" value={profit.subcontract} />
+                <RowKV label="広告配信費" value={profit.adDelivery} />
+                <RowKV label="その他諸経費" value={profit.misc} />
+                <div className="flex justify-between font-medium border-t pt-1">
+                  <span>原価合計</span>
+                  <span className="tabular-nums">{formatCurrency(profit.totalCost || null)}</span>
                 </div>
               </div>
-              <div className="border-t pt-3 space-y-2">
+
+              <div className="border-t pt-2">
+                <div className="flex justify-between font-bold">
+                  <span>粗利</span>
+                  <span className={`tabular-nums ${profit.grossProfit > 0 ? 'text-green-700' : profit.grossProfit < 0 ? 'text-red-600' : ''}`}>
+                    {formatCurrency(profit.grossProfit || null)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>粗利率</span>
+                  <span className="tabular-nums">{budget > 0 ? formatPercent(profit.grossMarginRate) : '—'}</span>
+                </div>
+              </div>
+
+              <div className="border-t pt-2 space-y-1">
+                <div className="text-xs font-medium text-gray-500">販管費（営業代理店フィー）</div>
+                <RowKV label={`小売マージン (${form.retail_margin || 0}%)`} value={profit.retailFee} />
+                <RowKV label={`代理店マージン (${form.agency_margin || 0}%)`} value={profit.agencyFee} />
+                <div className="flex justify-between font-medium border-t pt-1">
+                  <span>販管費合計</span>
+                  <span className="tabular-nums">{formatCurrency(profit.sgaTotal || null)}</span>
+                </div>
+              </div>
+
+              <div className="border-t pt-2">
+                <div className="flex justify-between font-bold">
+                  <span>営業利益</span>
+                  <span className={`tabular-nums ${profit.operatingProfit > 0 ? 'text-green-700' : profit.operatingProfit < 0 ? 'text-red-600' : ''}`}>
+                    {formatCurrency(profit.operatingProfit || null)}
+                  </span>
+                </div>
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>営業利益率</span>
+                  <span className="tabular-nums">{budget > 0 ? formatPercent(profit.operatingMarginRate) : '—'}</span>
+                </div>
+              </div>
+
+              <div className="border-t pt-2 space-y-1">
                 <div className="flex justify-between text-xs text-gray-500">
                   <span>必要再生回数 (X)</span>
                   <span className="tabular-nums">{requiredViews > 0 ? formatNumber(requiredViews) : '—'}</span>
@@ -581,5 +628,14 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
         </div>
       </div>
     </form>
+  )
+}
+
+function RowKV({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex justify-between text-xs">
+      <span className="text-gray-500">{label}</span>
+      <span className="tabular-nums">{value > 0 ? formatCurrency(value) : '—'}</span>
+    </div>
   )
 }
