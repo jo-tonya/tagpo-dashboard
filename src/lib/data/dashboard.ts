@@ -11,6 +11,7 @@ export interface CostStatusDetail {
     | 'review'
     | 'product'
     | 'misc'
+    | 'agency_fee'   // budget × (retail_margin + agency_margin) — campaigns.certainty で確定/見込み振り分け
   target_month: string
   amount: number
   status: string
@@ -156,6 +157,28 @@ export async function getCostStatusDetails(): Promise<CostStatusDetail[]> {
         status: certaintyMap[row.campaign_id] || '未確定',
       })
     }
+  }
+
+  // 営業代理店フィー = campaigns.budget × (retail_margin + agency_margin)
+  // campaigns.certainty で 確定/見込み を振り分ける（販管費なので personnel と同じ扱い）
+  const { data: agencyData } = await supabase
+    .from('campaigns')
+    .select('view_complete, budget, retail_margin, agency_margin, certainty')
+    .not('view_complete', 'is', null)
+    .not('budget', 'is', null)
+    .gt('budget', 0)
+
+  for (const c of agencyData || []) {
+    const vc = c.view_complete as string | null
+    if (!vc) continue
+    const fee = (Number(c.budget) || 0) * ((Number(c.retail_margin) || 0) + (Number(c.agency_margin) || 0))
+    if (fee <= 0) continue
+    results.push({
+      source: 'agency_fee',
+      target_month: `${vc.slice(0, 7)}-01`,
+      amount: fee,
+      status: c.certainty || '未確定',
+    })
   }
 
   return results

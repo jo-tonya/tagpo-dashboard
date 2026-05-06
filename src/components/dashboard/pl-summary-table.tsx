@@ -90,6 +90,7 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
     const review = sumBySource('review')
     const product = sumBySource('product')
     const misc = sumBySource('misc')
+    const agency = sumBySource('agency_fee')
 
     return data.map(d => {
       const revenue = confirmedRevByMonth[d.month] || 0
@@ -101,9 +102,8 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
       const miscCost = misc[d.month] || 0
       const personnelCost = personnel[d.month] || 0
       const eGuardian = eg[d.month] || 0
-      // 「営業代理店フィー」は campaigns ベースなので certainty フィルタは campaigns 側で
-      // 既に getCostStatusDetails が振り分けてないため、ここでは元 view の値をそのまま使う
-      const agencyFee = d.agency_fee_cost
+      // 営業代理店フィーは campaigns.certainty で振り分け済み
+      const agencyFee = agency[d.month] || 0
       const cogsTotal = reviewCost + userReward + productCost + subcontract + adDelivery + miscCost
       const sgaTotal = agencyFee + personnelCost
       const totalCost = cogsTotal + sgaTotal
