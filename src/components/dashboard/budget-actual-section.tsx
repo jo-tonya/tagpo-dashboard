@@ -49,15 +49,36 @@ function fiscalYearOf(month: string): number {
 
 // 月→四半期（FY ベース）
 //   Q1: 12,1,2 / Q2: 3,4,5 / Q3: 6,7,8 / Q4: 9,10,11
+//   label 例:
+//     'FY2026 Q1 (2025/12月〜2026/02月)' （年跨ぎ）
+//     'FY2025 Q4 (2025/09月〜11月)'      （同年内）
 function fiscalQuarterOf(month: string): { fy: number; q: 1 | 2 | 3 | 4; key: string; label: string } {
   const m = Number(month.slice(5, 7))
   const fy = fiscalYearOf(month)
   let q: 1 | 2 | 3 | 4
-  if (m === 12 || m === 1 || m === 2) q = 1
-  else if (m >= 3 && m <= 5) q = 2
-  else if (m >= 6 && m <= 8) q = 3
-  else q = 4
-  return { fy, q, key: `${fy}-Q${q}`, label: `FY${fy} Q${q}` }
+  let startY: number, startM: number, endY: number, endM: number
+  if (m === 12 || m === 1 || m === 2) {
+    q = 1
+    startY = fy - 1; startM = 12
+    endY = fy;       endM = 2
+  } else if (m >= 3 && m <= 5) {
+    q = 2
+    startY = fy; startM = 3
+    endY = fy;   endM = 5
+  } else if (m >= 6 && m <= 8) {
+    q = 3
+    startY = fy; startM = 6
+    endY = fy;   endM = 8
+  } else {
+    q = 4
+    startY = fy; startM = 9
+    endY = fy;   endM = 11
+  }
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const range = startY === endY
+    ? `${startY}/${pad(startM)}月〜${pad(endM)}月`
+    : `${startY}/${pad(startM)}月〜${endY}/${pad(endM)}月`
+  return { fy, q, key: `${fy}-Q${q}`, label: `FY${fy} Q${q} (${range})` }
 }
 
 function formatPercent(actual: number, budget: number): string {
@@ -208,7 +229,7 @@ export function BudgetActualCharts({ monthlyPL, budgets, viewMode }: ChartsProps
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-45} textAnchor="end" height={60} />
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-45} textAnchor="end" height={90} interval={0} />
                 <YAxis tickFormatter={formatYAxis} tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(value) => [`¥${Number(value).toLocaleString('ja-JP')}`, undefined]} />
                 <Legend />
@@ -230,7 +251,7 @@ export function BudgetActualCharts({ monthlyPL, budgets, viewMode }: ChartsProps
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-45} textAnchor="end" height={60} />
+                <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-45} textAnchor="end" height={90} interval={0} />
                 <YAxis tickFormatter={formatYAxis} tick={{ fontSize: 11 }} />
                 <Tooltip formatter={(value) => [`¥${Number(value).toLocaleString('ja-JP')}`, undefined]} />
                 <Legend />
