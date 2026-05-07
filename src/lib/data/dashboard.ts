@@ -9,7 +9,6 @@ export interface CostStatusDetail {
     | 'subcontract'
     | 'ad_delivery'
     | 'review'
-    | 'product'
     | 'misc'
     | 'agency_fee'   // budget × (retail_margin + agency_margin) — campaigns.certainty で確定/見込み振り分け
   target_month: string
@@ -32,7 +31,6 @@ export async function getMonthlyPL(): Promise<MonthlyPL[]> {
     revenue: Number(row.revenue) || 0,
     review_cost: Number(row.review_cost) || 0,
     user_reward_cost: Number(row.user_reward_cost) || 0,
-    product_cost: Number(row.product_cost) || 0,
     subcontract_cost: Number(row.subcontract_cost) || 0,
     ad_delivery_cost: Number(row.ad_delivery_cost) || 0,
     misc_cost: Number(row.misc_cost) || 0,
@@ -119,8 +117,8 @@ export async function getCostStatusDetails(): Promise<CostStatusDetail[]> {
   //   subcontract_1/2/3        → subcontract
   //   ad_delivery              → ad_delivery
   //   review_cost              → review
-  //   product_cost             → product
   //   misc                     → misc
+  // ※ product_cost は §9-6 で廃止
   const { data: ccData } = await supabase
     .from('campaign_costs')
     .select('target_month, amount, campaign_id, cost_type')
@@ -128,7 +126,7 @@ export async function getCostStatusDetails(): Promise<CostStatusDetail[]> {
       'tonya_user_payment',
       'subcontract_1', 'subcontract_2', 'subcontract_3',
       'ad_delivery',
-      'review_cost', 'product_cost', 'misc',
+      'review_cost', 'misc',
     ])
 
   if (ccData && ccData.length > 0) {
@@ -147,7 +145,6 @@ export async function getCostStatusDetails(): Promise<CostStatusDetail[]> {
       if (row.cost_type === 'tonya_user_payment') source = 'user_reward'
       else if (row.cost_type === 'ad_delivery') source = 'ad_delivery'
       else if (row.cost_type === 'review_cost') source = 'review'
-      else if (row.cost_type === 'product_cost') source = 'product'
       else if (row.cost_type === 'misc') source = 'misc'
       else source = 'subcontract'
       results.push({

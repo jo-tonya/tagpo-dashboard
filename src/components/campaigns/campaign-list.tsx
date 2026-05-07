@@ -112,8 +112,8 @@ export function CampaignList({ campaigns }: CampaignListProps) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>案件名</TableHead>
               <TableHead>メーカー</TableHead>
+              <TableHead>案件名</TableHead>
               <TableHead className="text-right">請求月（再生完了月）</TableHead>
               <TableHead className="text-right">請求金額</TableHead>
               <TableHead className="text-right">ユーザー報酬額</TableHead>
@@ -133,12 +133,12 @@ export function CampaignList({ campaigns }: CampaignListProps) {
 
               return (
                 <TableRow key={campaign.id} className="cursor-pointer hover:bg-gray-50">
+                  <TableCell className="text-gray-600">{campaign.maker}</TableCell>
                   <TableCell>
                     <Link href={`/campaigns/${campaign.id}`} className="text-blue-600 hover:underline">
                       {campaign.product}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-gray-600">{campaign.maker}</TableCell>
                   <TableCell className="text-right text-sm">{formatMonth(getBillingMonth(campaign))}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatCurrency(campaign.billing_amount)}</TableCell>
                   <TableCell className="text-right" onClick={e => e.stopPropagation()}>

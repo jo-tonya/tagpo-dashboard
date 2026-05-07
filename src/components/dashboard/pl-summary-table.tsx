@@ -38,11 +38,10 @@ type CostRow = {
   costTypes?: string[]
 }
 
-// 案件コスト（原価, COGS）— 6項目
+// 案件コスト（原価, COGS）— 5項目（商品代は §9-6 で廃止）
 const COGS_ROWS: CostRow[] = [
   { key: 'review_cost',      label: '審査費',       plKey: 'review_cost',      expandable: true, costTypes: ['review_cost'] },
   { key: 'user_reward_cost', label: 'ユーザー報酬',  plKey: 'user_reward_cost', expandable: true, costTypes: ['tonya_user_payment'] },
-  { key: 'product_cost',     label: '商品代',       plKey: 'product_cost',     expandable: true, costTypes: ['product_cost'] },
   { key: 'subcontract_cost', label: '外注費',       plKey: 'subcontract_cost', expandable: true, costTypes: ['subcontract_1', 'subcontract_2', 'subcontract_3'] },
   { key: 'ad_delivery_cost', label: '広告配信費',    plKey: 'ad_delivery_cost', expandable: true, costTypes: ['ad_delivery'] },
   { key: 'misc_cost',        label: 'その他諸経費',  plKey: 'misc_cost',        expandable: true, costTypes: ['misc'] },
@@ -88,7 +87,6 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
     const sub = sumBySource('subcontract')
     const ad = sumBySource('ad_delivery')
     const review = sumBySource('review')
-    const product = sumBySource('product')
     const misc = sumBySource('misc')
     const agency = sumBySource('agency_fee')
 
@@ -96,15 +94,13 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
       const revenue = confirmedRevByMonth[d.month] || 0
       const reviewCost = review[d.month] || 0
       const userReward = ur[d.month] || 0
-      const productCost = product[d.month] || 0
       const subcontract = sub[d.month] || 0
       const adDelivery = ad[d.month] || 0
       const miscCost = misc[d.month] || 0
       const personnelCost = personnel[d.month] || 0
       const eGuardian = eg[d.month] || 0
-      // 営業代理店フィーは campaigns.certainty で振り分け済み
       const agencyFee = agency[d.month] || 0
-      const cogsTotal = reviewCost + userReward + productCost + subcontract + adDelivery + miscCost
+      const cogsTotal = reviewCost + userReward + subcontract + adDelivery + miscCost
       const sgaTotal = agencyFee + personnelCost
       const totalCost = cogsTotal + sgaTotal
       return {
@@ -112,7 +108,6 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
         revenue,
         review_cost: reviewCost,
         user_reward_cost: userReward,
-        product_cost: productCost,
         subcontract_cost: subcontract,
         ad_delivery_cost: adDelivery,
         misc_cost: miscCost,

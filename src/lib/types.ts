@@ -10,8 +10,7 @@ export type CostType =
   | 'subcontract_3'
   | 'tonya_user_payment'
   | 'ad_delivery'
-  | 'review_cost'   // 審査費（targetPosts × review_unit_price、デフォ単価1000）
-  | 'product_cost'  // 商品代（targetPosts × product_unit_price）
+  | 'review_cost'   // 審査費（posters_count × review_unit_price、デフォ単価1000）
   | 'misc'          // その他諸経費（手入力）
 export type CampaignCertainty = '未確定' | '見込み' | '確定'
 
@@ -41,10 +40,10 @@ export interface Campaign {
   billing_amount: number | null
   retail_margin: number | null
   agency_margin: number | null
-  product_unit_price: number | null
   review_unit_price: number | null
   user_reward_unit_price: number | null
   user_reward_amount: number | null
+  posters_count: number | null  // 投稿者数（実投稿数）— 審査費 = posters_count × review_unit_price
   // タイムスタンプ
   created_at: string
   updated_at: string
@@ -170,17 +169,17 @@ export interface MonthlyBudget {
 }
 
 // MonthlyPL — ビューから取得
-// 「売上 = budget」モデル v3:
-//   原価6項目（review/user_reward/product/subcontract/ad_delivery/misc）+ cogs_total
+// 「売上 = budget」モデル v4:
+//   原価5項目（review/user_reward/subcontract/ad_delivery/misc）+ cogs_total
 //   販管費2項目（agency_fee/personnel）+ sga_total
 //   e_guardian_cost は EG 実請求額として補足表示用（メイン集計には使わない）
+//   ※ product_cost（商品代）は §9-6 で完全廃止
 export interface MonthlyPL {
   month: string
   revenue: number
-  // 原価（COGS, 6 項目）
+  // 原価（COGS, 5 項目）
   review_cost: number
   user_reward_cost: number
-  product_cost: number
   subcontract_cost: number
   ad_delivery_cost: number
   misc_cost: number

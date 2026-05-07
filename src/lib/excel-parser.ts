@@ -240,7 +240,8 @@ function mapProjectField(
   else if (fieldName.includes('小売マージン')) details.retail_margin = num(value)
   else if (fieldName.includes('代理店マージン') && section.includes('案件概要')) details.agency_margin = num(value)
   else if (fieldName.includes('TONYA売上')) details.tonya_revenue = num(value)
-  else if (fieldName.includes('商品単価') && section.includes('案件概要')) details.product_unit_price = num(value)
+  // 商品単価カラムは §9-6 で廃止。Excel に「商品単価」列があっても無視する。
+  else if (fieldName.includes('商品単価') && section.includes('案件概要')) { /* ignored - product_unit_price removed */ }
   else if (fieldName.includes('審査単価') && section.includes('案件概要')) details.review_unit_price = num(value)
   else if (fieldName.includes('ユーザー報酬単価') || fieldName.includes('発注単価（報酬）') || fieldName.includes('発注単価(報酬)'))
     details.user_reward_unit_price = num(value)

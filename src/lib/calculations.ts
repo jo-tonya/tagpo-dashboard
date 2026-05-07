@@ -106,30 +106,32 @@ export function calcUserRewardAmount(
 }
 
 /**
- * 案件粗利サマリーの精緻計算（v3 売上=予算モデル）
+ * 案件粗利サマリーの精緻計算（v4 売上=予算モデル、商品代廃止＋審査費=投稿者数ベース）
  *
  *   売上     = budget
- *   原価     = ① 審査費 + ② ユーザー報酬 + ③ 商品代 + ④ 外注代理店フィー + ⑤ 広告配信費 + ⑥ その他諸経費
+ *   原価     = ① 審査費 + ② ユーザー報酬 + ③ 外注代理店フィー + ④ 広告配信費 + ⑤ その他諸経費
  *   粗利     = 売上 - 原価合計
  *   販管費   = 小売マージン額 + 代理店マージン額（営業代理店フィー）
  *   営業利益 = 粗利 - 販管費
  *
- *   ① 審査費       = targetPosts × reviewUnitPrice（デフォルト 1000）
- *   ② ユーザー報酬 = manualUserReward があればそれ、無ければ requiredViews × userRewardUnitPrice（デフォルト 0.4）
- *   ③ 商品代       = targetPosts × productUnitPrice
- *   ④ 外注代理店フィー = subcontractFee（Σ delegated_amount）
- *   ⑤ 広告配信費   = adDeliveryCost
- *   ⑥ その他諸経費 = miscCost
+ *   ① 審査費       = postersCount × reviewUnitPrice（デフォ単価 1000）
+ *      ※ postersCount が null/0 のときは null（粗利サマリーで「—」表示、DB にも書き込まない）
+ *   ② ユーザー報酬 = manualUserReward があればそれ、無ければ requiredViews × userRewardUnitPrice（デフォ 0.4）
+ *   ③ 外注代理店フィー = subcontractFee（Σ delegated_amount）
+ *   ④ 広告配信費   = adDeliveryCost
+ *   ⑤ その他諸経費 = miscCost
+ *
+ *   targetPosts は粗利サマリー下部の参考表示用（審査費の計算には使わない）。
  */
 export function calcCampaignProfit(params: {
   budget: number
   unitPrice: number
   avgViews: number
-  retailMargin: number       // %
-  agencyMargin: number       // %
-  productUnitPrice: number
-  reviewUnitPrice: number    // デフォルト 1000 を呼び出し側で渡す
-  userRewardUnitPrice: number  // デフォルト 0.4 を呼び出し側で渡す
+  postersCount: number | null  // 投稿者数（実投稿数）。null なら審査費は null
+  retailMargin: number          // %
+  agencyMargin: number          // %
+  reviewUnitPrice: number       // デフォルト 1000 を呼び出し側で渡す
+  userRewardUnitPrice: number   // デフォルト 0.4 を呼び出し側で渡す
   manualUserReward: number | null
   subcontractFee: number
   adDeliveryCost: number
@@ -138,15 +140,17 @@ export function calcCampaignProfit(params: {
   const requiredViews = calcRequiredViews(params.budget, params.unitPrice)
   const targetPosts = calcTargetPosts(requiredViews, params.avgViews)
 
-  const reviewCost = Math.round(targetPosts * params.reviewUnitPrice)
+  // 審査費は投稿者数ベース。null/0 なら null（DB にも書かない方針）
+  const reviewCost: number | null = params.postersCount != null && params.postersCount > 0
+    ? Math.round(params.postersCount * params.reviewUnitPrice)
+    : null
   const userReward = params.manualUserReward != null && params.manualUserReward > 0
     ? params.manualUserReward
     : Math.round(requiredViews * params.userRewardUnitPrice)
-  const productCost = Math.round(targetPosts * params.productUnitPrice)
   const subcontract = params.subcontractFee
   const adDelivery = params.adDeliveryCost
   const misc = params.miscCost
-  const totalCost = reviewCost + userReward + productCost + subcontract + adDelivery + misc
+  const totalCost = (reviewCost ?? 0) + userReward + subcontract + adDelivery + misc
 
   const grossProfit = params.budget - totalCost
   const grossMarginRate = params.budget > 0 ? grossProfit / params.budget : 0
@@ -160,7 +164,7 @@ export function calcCampaignProfit(params: {
 
   return {
     requiredViews, targetPosts,
-    reviewCost, userReward, productCost, subcontract, adDelivery, misc, totalCost,
+    reviewCost, userReward, subcontract, adDelivery, misc, totalCost,
     grossProfit, grossMarginRate,
     retailFee, agencyFee, sgaTotal,
     operatingProfit, operatingMarginRate,

@@ -64,12 +64,12 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
     // PL
     retail_margin: campaign?.retail_margin != null ? (campaign.retail_margin * 100).toString() : '',
     agency_margin: campaign?.agency_margin != null ? (campaign.agency_margin * 100).toString() : '',
-    product_unit_price: campaign?.product_unit_price?.toString() || '',
     review_unit_price: campaign?.review_unit_price?.toString() || '',
     user_reward_unit_price: campaign?.user_reward_unit_price?.toString() || '',
     user_reward_amount: campaign?.user_reward_amount?.toString() || '',
     ad_delivery_amount: initialAdDeliveryAmount != null ? initialAdDeliveryAmount.toString() : '',
     misc_amount: initialMiscAmount != null ? initialMiscAmount.toString() : '',
+    posters_count: campaign?.posters_count?.toString() || '',
     // Budget
     budget: campaign?.budget?.toString() || '',
     unit_price: campaign?.unit_price?.toString() || '',
@@ -111,7 +111,11 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
   // 単価のフォーム値（空なら placeholder のデフォルトを使う）
   const reviewUnitPrice = parseFloat(form.review_unit_price) || DEFAULT_REVIEW_UNIT_PRICE
   const userRewardUnitPrice = parseFloat(form.user_reward_unit_price) || DEFAULT_USER_REWARD_UNIT_PRICE
-  const productUnitPrice = parseFloat(form.product_unit_price) || 0
+
+  // 投稿者数（実投稿数）— null/0 なら審査費は null（DB にも書き込まない）
+  const postersCount: number | null = form.posters_count
+    ? parseInt(form.posters_count) || null
+    : null
 
   const subcontractFee = useMemo(
     () => subs.reduce((sum, s) => sum + (parseFloat(s.delegated_amount) || 0), 0),
@@ -133,9 +137,9 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
     budget,
     unitPrice,
     avgViews,
+    postersCount,
     retailMargin: parseFloat(form.retail_margin) || 0,
     agencyMargin: parseFloat(form.agency_margin) || 0,
-    productUnitPrice,
     reviewUnitPrice,
     userRewardUnitPrice,
     manualUserReward,
@@ -143,9 +147,9 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
     adDeliveryCost,
     miscCost,
   }), [
-    budget, unitPrice, avgViews,
+    budget, unitPrice, avgViews, postersCount,
     form.retail_margin, form.agency_margin,
-    productUnitPrice, reviewUnitPrice, userRewardUnitPrice,
+    reviewUnitPrice, userRewardUnitPrice,
     manualUserReward, subcontractFee, adDeliveryCost, miscCost,
   ])
 
@@ -198,14 +202,14 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
         post_end: milestones.post_end || null,
         view_complete: milestones.view_complete || null,
         report_send: milestones.report_send || null,
-        // PL（v3: 売上＝予算モデル。billing_amount は budget をそのまま保存）
+        // PL（v4: 売上＝予算モデル。billing_amount は budget をそのまま保存）
         billing_amount: budget > 0 ? Math.round(budget) : null,
         retail_margin: form.retail_margin ? parseFloat(form.retail_margin) / 100 : null,
         agency_margin: form.agency_margin ? parseFloat(form.agency_margin) / 100 : null,
-        product_unit_price: form.product_unit_price ? parseFloat(form.product_unit_price) : null,
         review_unit_price: form.review_unit_price ? parseFloat(form.review_unit_price) : null,
         user_reward_unit_price: form.user_reward_unit_price ? parseFloat(form.user_reward_unit_price) : null,
         user_reward_amount: form.user_reward_amount ? parseFloat(form.user_reward_amount) : null,
+        posters_count: postersCount,
         // Subcontracts
         subcontracts: subs.filter(s => s.company_name.trim()).map(s => ({
           sort_order: s.sort_order,
@@ -216,12 +220,12 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
         })),
       }
 
-      // 派生コスト（review/product/misc/ad_delivery/user_reward）の同期 payload
+      // 派生コスト（review/misc/ad_delivery/user_reward）の同期 payload
       // ユーザー報酬は手動値があればそれ、無ければ自動計算（profit.userReward）
+      // 審査費は profit.reviewCost が null（投稿者数空欄）なら null を送って既存行を削除
       const syncPayload = {
         userReward: profit.userReward > 0 ? profit.userReward : null,
-        reviewCost: profit.reviewCost > 0 ? profit.reviewCost : null,
-        productCost: profit.productCost > 0 ? profit.productCost : null,
+        reviewCost: profit.reviewCost != null && profit.reviewCost > 0 ? profit.reviewCost : null,
         adDelivery: adDeliveryCost > 0 ? adDeliveryCost : null,
         miscCost: miscCost > 0 ? miscCost : null,
       }
@@ -439,12 +443,17 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
                 <p className="text-xs text-orange-600">※ PL に反映させるには「再生完了」日の入力が必要です（再生完了月＝請求月として扱われます）</p>
               </div>
               <div className="space-y-2">
-                <Label>投稿者数</Label>
+                <Label>投稿者一覧（メモ）</Label>
                 <Input value={form.influencers} onChange={e => setForm(p => ({ ...p, influencers: e.target.value }))} />
               </div>
               <div className="space-y-2">
-                <Label>商品単価</Label>
-                <NumericInput value={form.product_unit_price} onChange={v => setForm(p => ({ ...p, product_unit_price: v }))} />
+                <Label>投稿者数（実投稿数）</Label>
+                <NumericInput
+                  value={form.posters_count}
+                  onChange={v => setForm(p => ({ ...p, posters_count: v }))}
+                  integerOnly
+                />
+                <p className="text-xs text-gray-500">空欄なら審査費は計算されません</p>
               </div>
               <div className="space-y-2">
                 <Label>審査単価</Label>
@@ -567,7 +576,6 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
                 <div className="text-xs font-medium text-gray-500">原価</div>
                 <RowKV label="審査費" value={profit.reviewCost} />
                 <RowKV label="ユーザー報酬" value={profit.userReward} />
-                <RowKV label="商品代" value={profit.productCost} />
                 <RowKV label="外注代理店フィー" value={profit.subcontract} />
                 <RowKV label="広告配信費" value={profit.adDelivery} />
                 <RowKV label="その他諸経費" value={profit.misc} />
@@ -631,11 +639,11 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
   )
 }
 
-function RowKV({ label, value }: { label: string; value: number }) {
+function RowKV({ label, value }: { label: string; value: number | null }) {
   return (
     <div className="flex justify-between text-xs">
       <span className="text-gray-500">{label}</span>
-      <span className="tabular-nums">{value > 0 ? formatCurrency(value) : '—'}</span>
+      <span className="tabular-nums">{value != null && value > 0 ? formatCurrency(value) : '—'}</span>
     </div>
   )
 }
