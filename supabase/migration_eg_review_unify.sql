@@ -7,10 +7,11 @@
 --   - EG（外注先）の実費は件数単位の前月チャージ＋繰越＋管理費という独特な構造で、案件×単価では再現不可。
 --
 -- 変更点:
---   ① monthly_pl_view の review_cost を fixed_costs (e_guardian / 審査（実費入力）) ベースに変更
---   ② 販管費に EG管理費（eg_admin_cost）行を新設
---   ③ campaign_costs から cost_type='review_cost' を全削除（二重計上排除）
+--   ① monthly_pl_view の review_cost を fixed_costs (e_guardian) の
+--      「審査（実費入力）」と「管理費」を合算した値に変更
+--   ② campaign_costs から cost_type='review_cost' を全削除（二重計上排除）
 --   ※ campaigns.posters_count / review_unit_price カラムは残す（案件単位の試算値表示用）
+--   ※ 販管費に EG管理費 を独立行として置かない（審査費と合算する運用方針）
 --
 -- 注意: 実行前に Supabase の pg_dump バックアップを取得すること。
 -- ==============================================
@@ -40,18 +41,12 @@ agency_fee AS (
   WHERE budget IS NOT NULL AND budget > 0 AND view_complete IS NOT NULL
   GROUP BY DATE_TRUNC('month', view_complete)::date
 ),
--- ★ 審査費は EG ページの「審査（実費入力）」サブカテゴリから取る（実費）
-eg_review AS (
+-- ★ 審査費 = EG ページの「審査（実費入力）」+「管理費」の合算
+eg_total AS (
   SELECT target_month AS month, SUM(amount) AS total
   FROM fixed_costs
-  WHERE cost_category = 'e_guardian' AND cost_subcategory = '審査（実費入力）'
-  GROUP BY target_month
-),
--- ★ EG 管理費は別 CTE（販管費に表示）
-eg_admin AS (
-  SELECT target_month AS month, SUM(amount) AS total
-  FROM fixed_costs
-  WHERE cost_category = 'e_guardian' AND cost_subcategory = '管理費'
+  WHERE cost_category = 'e_guardian'
+    AND cost_subcategory IN ('審査（実費入力）', '管理費')
   GROUP BY target_month
 ),
 personnel AS (
@@ -82,31 +77,29 @@ misc_cost AS (
 SELECT
   m.month,
   COALESCE(r.total_revenue, 0) AS revenue,
-  -- 原価5項目（審査費は EG 実費由来）
-  COALESCE(eg_r.total, 0) AS review_cost,
+  -- 原価5項目（審査費 = EG 審査+管理 合算）
+  COALESCE(eg.total, 0) AS review_cost,
   COALESCE(ur.total, 0) AS user_reward_cost,
   COALESCE(sc.total, 0) AS subcontract_cost,
   COALESCE(ad.total, 0) AS ad_delivery_cost,
   COALESCE(mc.total, 0) AS misc_cost,
-  -- 販管費3項目（NEW: eg_admin_cost）
-  COALESCE(eg_a.total, 0) AS eg_admin_cost,
+  -- 販管費2項目
   COALESCE(af.total, 0) AS agency_fee_cost,
   COALESCE(p.total, 0) AS personnel_cost,
-  -- 補足: 互換性のため e_guardian_cost（審査費＋管理費 合計）も残す
-  COALESCE(eg_r.total, 0) + COALESCE(eg_a.total, 0) AS e_guardian_cost,
+  -- 補足: e_guardian_cost は EG 合算（review_cost と同値、互換のため残置）
+  COALESCE(eg.total, 0) AS e_guardian_cost,
   -- 集計
-  COALESCE(eg_r.total,0) + COALESCE(ur.total,0) + COALESCE(sc.total,0) + COALESCE(ad.total,0) + COALESCE(mc.total,0) AS cogs_total,
-  COALESCE(eg_a.total,0) + COALESCE(af.total,0) + COALESCE(p.total,0) AS sga_total,
-  COALESCE(eg_r.total,0) + COALESCE(ur.total,0) + COALESCE(sc.total,0) + COALESCE(ad.total,0) + COALESCE(mc.total,0)
-    + COALESCE(eg_a.total,0) + COALESCE(af.total,0) + COALESCE(p.total,0) AS total_cost,
+  COALESCE(eg.total,0) + COALESCE(ur.total,0) + COALESCE(sc.total,0) + COALESCE(ad.total,0) + COALESCE(mc.total,0) AS cogs_total,
+  COALESCE(af.total,0) + COALESCE(p.total,0) AS sga_total,
+  COALESCE(eg.total,0) + COALESCE(ur.total,0) + COALESCE(sc.total,0) + COALESCE(ad.total,0) + COALESCE(mc.total,0)
+    + COALESCE(af.total,0) + COALESCE(p.total,0) AS total_cost,
   COALESCE(r.total_revenue, 0)
-    - (COALESCE(eg_r.total,0) + COALESCE(ur.total,0) + COALESCE(sc.total,0) + COALESCE(ad.total,0) + COALESCE(mc.total,0))
-    - (COALESCE(eg_a.total,0) + COALESCE(af.total,0) + COALESCE(p.total,0)) AS operating_profit
+    - (COALESCE(eg.total,0) + COALESCE(ur.total,0) + COALESCE(sc.total,0) + COALESCE(ad.total,0) + COALESCE(mc.total,0))
+    - (COALESCE(af.total,0) + COALESCE(p.total,0)) AS operating_profit
 FROM months m
 LEFT JOIN revenue r ON r.month = m.month
 LEFT JOIN agency_fee af ON af.month = m.month
-LEFT JOIN eg_review eg_r ON eg_r.month = m.month
-LEFT JOIN eg_admin eg_a ON eg_a.month = m.month
+LEFT JOIN eg_total eg ON eg.month = m.month
 LEFT JOIN personnel p ON p.month = m.month
 LEFT JOIN user_reward ur ON ur.month = m.month
 LEFT JOIN subcontract sc ON sc.month = m.month
@@ -131,5 +124,5 @@ NOTIFY pgrst, 'reload schema';
 
 -- ==============================================
 -- 確認:
---   SELECT month, review_cost, eg_admin_cost FROM monthly_pl_view ORDER BY month;
+--   SELECT month, review_cost FROM monthly_pl_view ORDER BY month;
 -- ==============================================

@@ -39,7 +39,7 @@ type CostRow = {
 }
 
 // 案件コスト（原価, COGS）— 5項目
-//   ※ 審査費は §11 で EG ページの実費（fixed_costs e_guardian / 審査（実費入力））ベースに変更。
+//   ※ 審査費は §11 で EG ページの実費ベース（「審査（実費入力）」+「管理費」を合算）に変更。
 //      campaign_costs 由来ではないため案件別内訳は出せない（expandable: false）。
 const COGS_ROWS: CostRow[] = [
   { key: 'review_cost',      label: '審査費',       plKey: 'review_cost',      expandable: false },
@@ -49,9 +49,8 @@ const COGS_ROWS: CostRow[] = [
   { key: 'misc_cost',        label: 'その他諸経費',  plKey: 'misc_cost',        expandable: true, costTypes: ['misc'] },
 ]
 
-// 販管費（SG&A, 非案件コスト）— 3項目（§11 で eg_admin_cost を追加）
+// 販管費（SG&A, 非案件コスト）— 2項目
 const SGA_ROWS: CostRow[] = [
-  { key: 'eg_admin_cost',   label: 'EG管理費',                          plKey: 'eg_admin_cost',   expandable: false },
   { key: 'agency_fee_cost', label: '営業代理店フィー',                    plKey: 'agency_fee_cost', expandable: false },
   { key: 'personnel_cost',  label: 'アルバイト・イベント・インターン',     plKey: 'personnel_cost',  expandable: false },
 ]
@@ -88,8 +87,7 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
     const ur = sumBySource('user_reward')
     const sub = sumBySource('subcontract')
     const ad = sumBySource('ad_delivery')
-    const review = sumBySource('review')      // §11: EG 審査（実費入力）
-    const egAdmin = sumBySource('eg_admin')    // §11: EG 管理費
+    const review = sumBySource('review')   // §11: EG「審査（実費入力）」+「管理費」合算
     const misc = sumBySource('misc')
     const agency = sumBySource('agency_fee')
 
@@ -101,11 +99,10 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
       const adDelivery = ad[d.month] || 0
       const miscCost = misc[d.month] || 0
       const personnelCost = personnel[d.month] || 0
-      const egAdminCost = egAdmin[d.month] || 0
-      const eGuardian = reviewCost + egAdminCost  // 補足: 審査費＋管理費 合計
+      const eGuardian = reviewCost   // EG 合算（互換用）
       const agencyFee = agency[d.month] || 0
       const cogsTotal = reviewCost + userReward + subcontract + adDelivery + miscCost
-      const sgaTotal = egAdminCost + agencyFee + personnelCost
+      const sgaTotal = agencyFee + personnelCost
       const totalCost = cogsTotal + sgaTotal
       return {
         ...d,
@@ -115,7 +112,6 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
         subcontract_cost: subcontract,
         ad_delivery_cost: adDelivery,
         misc_cost: miscCost,
-        eg_admin_cost: egAdminCost,
         agency_fee_cost: agencyFee,
         personnel_cost: personnelCost,
         e_guardian_cost: eGuardian,

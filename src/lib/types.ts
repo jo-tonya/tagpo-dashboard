@@ -173,9 +173,10 @@ export interface MonthlyBudget {
 // MonthlyPL — ビューから取得
 // 「売上 = budget」モデル v5:
 //   原価5項目（review/user_reward/subcontract/ad_delivery/misc）+ cogs_total
-//     ※ review_cost は §11 で EG ページ（fixed_costs e_guardian / 審査（実費入力））ベースに変更
-//   販管費3項目（eg_admin/agency_fee/personnel）+ sga_total
-//   e_guardian_cost は審査費＋管理費の合計（補足表示用）
+//     ※ review_cost は §11 で EG ページ（fixed_costs e_guardian の
+//        「審査（実費入力）」+「管理費」の合算）ベースに変更
+//   販管費2項目（agency_fee/personnel）+ sga_total
+//   e_guardian_cost は EG 合算（review_cost と同値、互換のため残置）
 export interface MonthlyPL {
   month: string
   revenue: number
@@ -185,11 +186,10 @@ export interface MonthlyPL {
   subcontract_cost: number
   ad_delivery_cost: number
   misc_cost: number
-  // 販管費（SG&A, 3 項目）
-  eg_admin_cost: number
+  // 販管費（SG&A, 2 項目）
   agency_fee_cost: number
   personnel_cost: number
-  // 補足（メイン集計外）— 審査費＋管理費の合計
+  // 補足（メイン集計外）— EG 合算（互換用）
   e_guardian_cost: number
   // 集計値
   cogs_total: number
