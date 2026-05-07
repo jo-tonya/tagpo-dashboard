@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Campaign, getBillingMonth } from '@/lib/types'
-import { calcUserRewardAmount, formatCurrency, formatMonth } from '@/lib/calculations'
+import { calcUserRewardAmount, calcRevenue, formatCurrency, formatMonth } from '@/lib/calculations'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -115,6 +115,7 @@ export function CampaignList({ campaigns }: CampaignListProps) {
               <TableHead>メーカー</TableHead>
               <TableHead>案件名</TableHead>
               <TableHead className="text-right">請求月（再生完了月）</TableHead>
+              <TableHead className="text-right">予算</TableHead>
               <TableHead className="text-right">請求金額</TableHead>
               <TableHead className="text-right">ユーザー報酬額</TableHead>
               <TableHead className="text-center">ステータス</TableHead>
@@ -130,6 +131,15 @@ export function CampaignList({ campaigns }: CampaignListProps) {
                 campaign.user_reward_unit_price
               )
               const isManual = campaign.user_reward_amount != null && campaign.user_reward_amount > 0
+              // 請求金額（実請求額）= 予算 × (1 - 小売マージン - 代理店マージン)
+              // retail_margin / agency_margin は DB に小数（例 0.15）で保存されている
+              const invoiceAmount = campaign.budget != null && campaign.budget > 0
+                ? Math.round(calcRevenue(
+                    campaign.budget,
+                    campaign.retail_margin ?? 0,
+                    campaign.agency_margin ?? 0,
+                  ))
+                : null
 
               return (
                 <TableRow key={campaign.id} className="cursor-pointer hover:bg-gray-50">
@@ -140,7 +150,8 @@ export function CampaignList({ campaigns }: CampaignListProps) {
                     </Link>
                   </TableCell>
                   <TableCell className="text-right text-sm">{formatMonth(getBillingMonth(campaign))}</TableCell>
-                  <TableCell className="text-right tabular-nums">{formatCurrency(campaign.billing_amount)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCurrency(campaign.budget)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatCurrency(invoiceAmount)}</TableCell>
                   <TableCell className="text-right" onClick={e => e.stopPropagation()}>
                     <InlineRewardInput
                       currentAmount={rewardAmount}
@@ -171,7 +182,7 @@ export function CampaignList({ campaigns }: CampaignListProps) {
             })}
             {campaigns.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-gray-500 py-8">
+                <TableCell colSpan={8} className="text-center text-gray-500 py-8">
                   案件がありません
                 </TableCell>
               </TableRow>
