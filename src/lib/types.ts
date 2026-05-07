@@ -10,8 +10,10 @@ export type CostType =
   | 'subcontract_3'
   | 'tonya_user_payment'
   | 'ad_delivery'
-  | 'review_cost'   // 審査費（posters_count × review_unit_price、デフォ単価1000）
   | 'misc'          // その他諸経費（手入力）
+  // ※ 'review_cost' は §11 で廃止。ダッシュボード審査費は EG ページ
+  //   (fixed_costs cost_category='e_guardian', cost_subcategory='審査（実費入力）') ベース。
+  //   案件単位の試算値は粗利サマリー UI のみ（DB 書込なし）。
 export type CampaignCertainty = '未確定' | '見込み' | '確定'
 
 // Campaign = 旧 Project + 旧 campaigns を統合
@@ -169,11 +171,11 @@ export interface MonthlyBudget {
 }
 
 // MonthlyPL — ビューから取得
-// 「売上 = budget」モデル v4:
+// 「売上 = budget」モデル v5:
 //   原価5項目（review/user_reward/subcontract/ad_delivery/misc）+ cogs_total
-//   販管費2項目（agency_fee/personnel）+ sga_total
-//   e_guardian_cost は EG 実請求額として補足表示用（メイン集計には使わない）
-//   ※ product_cost（商品代）は §9-6 で完全廃止
+//     ※ review_cost は §11 で EG ページ（fixed_costs e_guardian / 審査（実費入力））ベースに変更
+//   販管費3項目（eg_admin/agency_fee/personnel）+ sga_total
+//   e_guardian_cost は審査費＋管理費の合計（補足表示用）
 export interface MonthlyPL {
   month: string
   revenue: number
@@ -183,10 +185,11 @@ export interface MonthlyPL {
   subcontract_cost: number
   ad_delivery_cost: number
   misc_cost: number
-  // 販管費（SG&A, 2 項目）
+  // 販管費（SG&A, 3 項目）
+  eg_admin_cost: number
   agency_fee_cost: number
   personnel_cost: number
-  // 補足（メイン集計外）
+  // 補足（メイン集計外）— 審査費＋管理費の合計
   e_guardian_cost: number
   // 集計値
   cogs_total: number

@@ -3,14 +3,14 @@ import { MonthlyPL, RevenueDetail, CostDetail } from '../types'
 
 export interface CostStatusDetail {
   source:
-    | 'e_guardian'
     | 'personnel'
     | 'user_reward'
     | 'subcontract'
     | 'ad_delivery'
-    | 'review'
+    | 'review'         // §11: EG ページの審査（実費入力）。fixed_costs e_guardian / 審査（実費入力）
+    | 'eg_admin'       // §11: EG ページの管理費。fixed_costs e_guardian / 管理費
     | 'misc'
-    | 'agency_fee'   // budget × (retail_margin + agency_margin) — campaigns.certainty で確定/見込み振り分け
+    | 'agency_fee'     // budget × (retail_margin + agency_margin) — campaigns.certainty で確定/見込み振り分け
   target_month: string
   amount: number
   status: string
@@ -34,6 +34,7 @@ export async function getMonthlyPL(): Promise<MonthlyPL[]> {
     subcontract_cost: Number(row.subcontract_cost) || 0,
     ad_delivery_cost: Number(row.ad_delivery_cost) || 0,
     misc_cost: Number(row.misc_cost) || 0,
+    eg_admin_cost: Number(row.eg_admin_cost) || 0,
     agency_fee_cost: Number(row.agency_fee_cost) || 0,
     personnel_cost: Number(row.personnel_cost) || 0,
     e_guardian_cost: Number(row.e_guardian_cost) || 0,
@@ -86,9 +87,12 @@ export async function getCostDetails(): Promise<CostDetail[]> {
 
 export async function getCostStatusDetails(): Promise<CostStatusDetail[]> {
   const supabase = await createClient()
+  // EG ページの fixed_costs を 審査（実費入力）／管理費 に振り分け
+  //   '審査（実費入力）' → review（原価の「審査費」行）
+  //   '管理費'           → eg_admin（販管費の「EG管理費」行）
   const { data: egData } = await supabase
     .from('fixed_costs')
-    .select('target_month, amount, status')
+    .select('target_month, amount, status, cost_subcategory')
     .eq('cost_category', 'e_guardian')
   const { data: personnelData } = await supabase
     .from('personnel_payments')
@@ -96,8 +100,13 @@ export async function getCostStatusDetails(): Promise<CostStatusDetail[]> {
 
   const results: CostStatusDetail[] = []
   for (const row of egData || []) {
+    const sub = row.cost_subcategory as string | null
+    let source: CostStatusDetail['source']
+    if (sub === '審査（実費入力）') source = 'review'
+    else if (sub === '管理費') source = 'eg_admin'
+    else continue  // 想定外サブカテゴリは無視（紹介制度など別枠）
     results.push({
-      source: 'e_guardian',
+      source,
       target_month: row.target_month,
       amount: Number(row.amount) || 0,
       status: row.status || '見込み',
@@ -116,9 +125,8 @@ export async function getCostStatusDetails(): Promise<CostStatusDetail[]> {
   //   tonya_user_payment       → user_reward
   //   subcontract_1/2/3        → subcontract
   //   ad_delivery              → ad_delivery
-  //   review_cost              → review
   //   misc                     → misc
-  // ※ product_cost は §9-6 で廃止
+  // ※ product_cost / review_cost は廃止（§9-6 / §11）
   const { data: ccData } = await supabase
     .from('campaign_costs')
     .select('target_month, amount, campaign_id, cost_type')
@@ -126,7 +134,7 @@ export async function getCostStatusDetails(): Promise<CostStatusDetail[]> {
       'tonya_user_payment',
       'subcontract_1', 'subcontract_2', 'subcontract_3',
       'ad_delivery',
-      'review_cost', 'misc',
+      'misc',
     ])
 
   if (ccData && ccData.length > 0) {
@@ -144,7 +152,6 @@ export async function getCostStatusDetails(): Promise<CostStatusDetail[]> {
       let source: CostStatusDetail['source']
       if (row.cost_type === 'tonya_user_payment') source = 'user_reward'
       else if (row.cost_type === 'ad_delivery') source = 'ad_delivery'
-      else if (row.cost_type === 'review_cost') source = 'review'
       else if (row.cost_type === 'misc') source = 'misc'
       else source = 'subcontract'
       results.push({

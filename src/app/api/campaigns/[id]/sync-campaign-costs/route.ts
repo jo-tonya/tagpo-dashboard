@@ -1,10 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 
-// 派生コスト（review_cost / misc / ad_delivery / tonya_user_payment）を一括 upsert する。
-// body: { reviewCost, miscCost, adDelivery, userReward } 各 number | null
+// 派生コスト（misc / ad_delivery / tonya_user_payment）を一括 upsert する。
+// body: { miscCost, adDelivery, userReward } 各 number | null
 // null/0 のキーは削除、>0 のキーは upsert（target_month は campaigns.view_complete の月初）
-// ※ product_cost は §9-6 で廃止。互換性のため body.productCost が来ても無視する。
+// ※ product_cost / review_cost は廃止（§9-6 / §11）。
+//    body.productCost / body.reviewCost が来ても無視する（互換性のため）。
+//    ダッシュボードの審査費は EG ページ（fixed_costs）から取得する。
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -27,7 +29,6 @@ export async function POST(
   // (cost_type, label) のセット
   const items: { type: string; label: string; amount: number | null }[] = [
     { type: 'tonya_user_payment', label: 'ユーザー報酬', amount: numberOrNull(body.userReward) },
-    { type: 'review_cost',        label: '審査費',       amount: numberOrNull(body.reviewCost) },
     { type: 'ad_delivery',        label: '広告配信費',   amount: numberOrNull(body.adDelivery) },
     { type: 'misc',               label: 'その他諸経費', amount: numberOrNull(body.miscCost) },
   ]

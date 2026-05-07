@@ -220,12 +220,11 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
         })),
       }
 
-      // 派生コスト（review/misc/ad_delivery/user_reward）の同期 payload
+      // 派生コスト（misc / ad_delivery / user_reward）の同期 payload
+      // ※ §11: 審査費は EG ページから集計するので案件側では DB に書き込まない（二重計上排除）
       // ユーザー報酬は手動値があればそれ、無ければ自動計算（profit.userReward）
-      // 審査費は profit.reviewCost が null（投稿者数空欄）なら null を送って既存行を削除
       const syncPayload = {
         userReward: profit.userReward > 0 ? profit.userReward : null,
-        reviewCost: profit.reviewCost != null && profit.reviewCost > 0 ? profit.reviewCost : null,
         adDelivery: adDeliveryCost > 0 ? adDeliveryCost : null,
         miscCost: miscCost > 0 ? miscCost : null,
       }
@@ -574,7 +573,10 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
 
               <div className="border-t pt-2 space-y-1">
                 <div className="text-xs font-medium text-gray-500">原価</div>
-                <RowKV label="審査費" value={profit.reviewCost} />
+                <p className="text-[10px] text-gray-400 leading-tight">
+                  ※ 審査費は案件単位の試算値。実費はEGページで管理
+                </p>
+                <RowKV label="審査費（試算）" value={profit.reviewCost} />
                 <RowKV label="ユーザー報酬" value={profit.userReward} />
                 <RowKV label="外注代理店フィー" value={profit.subcontract} />
                 <RowKV label="広告配信費" value={profit.adDelivery} />
