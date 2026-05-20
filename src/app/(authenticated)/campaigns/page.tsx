@@ -1,11 +1,14 @@
 import { CampaignList } from '@/components/campaigns/campaign-list'
-import { getCampaigns } from '@/lib/data/campaigns'
+import { getCampaigns, getCampaignCostMaps } from '@/lib/data/campaigns'
 import { Button } from '@/components/ui/button'
 import Link from 'next/link'
 import { Plus } from 'lucide-react'
 
 export default async function CampaignsPage() {
-  const campaigns = await getCampaigns()
+  const [campaigns, costMaps] = await Promise.all([
+    getCampaigns(),
+    getCampaignCostMaps(),
+  ])
 
   return (
     <div className="space-y-6">
@@ -21,7 +24,7 @@ export default async function CampaignsPage() {
           </Button>
         </Link>
       </div>
-      <CampaignList campaigns={campaigns} />
+      <CampaignList campaigns={campaigns} costMaps={costMaps} />
     </div>
   )
 }

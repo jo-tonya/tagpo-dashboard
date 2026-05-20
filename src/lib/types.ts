@@ -10,11 +10,18 @@ export type CostType =
   | 'subcontract_3'
   | 'tonya_user_payment'
   | 'ad_delivery'
-  | 'misc'          // その他諸経費（手入力）
-  // ※ 'review_cost' は §11 で廃止。ダッシュボード審査費は EG ページ
-  //   (fixed_costs cost_category='e_guardian', cost_subcategory='審査（実費入力）') ベース。
+  | 'misc'              // その他諸経費（手入力）
+  | 'product_cost'      // 商品代 = posters_count × product_unit_price（§12-1 復活）
+  // ※ 'review_cost' は §11 で DB 書込廃止（EG ページの fixed_costs 由来に一本化）。
   //   案件単位の試算値は粗利サマリー UI のみ（DB 書込なし）。
-export type CampaignCertainty = '未確定' | '見込み' | '確定'
+
+// 確度（§12-3 で 5 値に拡張）
+export type CampaignCertainty =
+  | 'A.完了'
+  | 'B.進行中'
+  | 'C.受注確定'
+  | 'D.見込み+'
+  | 'E.見込み-'
 
 // Campaign = 旧 Project + 旧 campaigns を統合
 export interface Campaign {
@@ -38,10 +45,14 @@ export interface Campaign {
   view_complete: string | null
   report_send: string | null
   memo: string
+  // §12-4: 案件ボードの追加メモ項目
+  creative_notes: string  // クリエイティブの追加指示
+  schedule_notes: string  // スケジュール、進行の注意点
   // PL連携用（新規追加カラム）
   billing_amount: number | null
   retail_margin: number | null
   agency_margin: number | null
+  product_unit_price: number | null  // §12-1 復活: 商品単価
   review_unit_price: number | null
   user_reward_unit_price: number | null
   user_reward_amount: number | null
@@ -171,25 +182,28 @@ export interface MonthlyBudget {
 }
 
 // MonthlyPL — ビューから取得
-// 「売上 = budget」モデル v5:
-//   原価5項目（review/user_reward/subcontract/ad_delivery/misc）+ cogs_total
-//     ※ review_cost は §11 で EG ページ（fixed_costs e_guardian の
-//        「審査（実費入力）」+「管理費」の合算）ベースに変更
-//   販管費2項目（agency_fee/personnel）+ sga_total
-//   e_guardian_cost は EG 合算（review_cost と同値、互換のため残置）
+// 「売上 = budget」モデル v6:
+//   原価6項目（review/user_reward/product/subcontract/ad_delivery/misc）+ cogs_total
+//     ※ review_cost は §11→§12-5 で EG ページ「審査（実費入力）」のみに変更
+//     ※ product_cost は §12-1 で復活
+//   販管費3項目（eg_admin/agency_fee/personnel）+ sga_total
+//     ※ eg_admin_cost は §11→§12-5 で復活（EG 管理費を独立行に分離）
+//   e_guardian_cost は審査費＋管理費の合計（補足表示用、互換のため残置）
 export interface MonthlyPL {
   month: string
   revenue: number
-  // 原価（COGS, 5 項目）
+  // 原価（COGS, 6 項目）
   review_cost: number
   user_reward_cost: number
+  product_cost: number
   subcontract_cost: number
   ad_delivery_cost: number
   misc_cost: number
-  // 販管費（SG&A, 2 項目）
+  // 販管費（SG&A, 3 項目）
+  eg_admin_cost: number
   agency_fee_cost: number
   personnel_cost: number
-  // 補足（メイン集計外）— EG 合算（互換用）
+  // 補足（メイン集計外）— EG 審査費＋管理費 合計
   e_guardian_cost: number
   // 集計値
   cogs_total: number

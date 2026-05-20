@@ -7,7 +7,9 @@ export interface CostStatusDetail {
     | 'user_reward'
     | 'subcontract'
     | 'ad_delivery'
-    | 'review'         // §11: EG ページの「審査（実費入力）」+「管理費」を合算した審査費
+    | 'review'         // §12-5: EG ページの「審査（実費入力）」（管理費は分離）
+    | 'eg_admin'       // §12-5: EG ページの「管理費」
+    | 'product'        // §12-1 復活: 商品代（campaign_costs cost_type='product_cost'）
     | 'misc'
     | 'agency_fee'     // budget × (retail_margin + agency_margin) — campaigns.certainty で確定/見込み振り分け
   target_month: string
@@ -30,9 +32,11 @@ export async function getMonthlyPL(): Promise<MonthlyPL[]> {
     revenue: Number(row.revenue) || 0,
     review_cost: Number(row.review_cost) || 0,
     user_reward_cost: Number(row.user_reward_cost) || 0,
+    product_cost: Number(row.product_cost) || 0,
     subcontract_cost: Number(row.subcontract_cost) || 0,
     ad_delivery_cost: Number(row.ad_delivery_cost) || 0,
     misc_cost: Number(row.misc_cost) || 0,
+    eg_admin_cost: Number(row.eg_admin_cost) || 0,
     agency_fee_cost: Number(row.agency_fee_cost) || 0,
     personnel_cost: Number(row.personnel_cost) || 0,
     e_guardian_cost: Number(row.e_guardian_cost) || 0,
@@ -85,8 +89,7 @@ export async function getCostDetails(): Promise<CostDetail[]> {
 
 export async function getCostStatusDetails(): Promise<CostStatusDetail[]> {
   const supabase = await createClient()
-  // EG ページの fixed_costs を 審査（実費入力）+管理費 を 'review' source に集約
-  //   ※ §11 改: 「審査費」行に EG 全体（審査+管理）を合算する運用方針に揃える
+  // §12-5: EG ページの fixed_costs を「審査（実費入力）」=review、「管理費」=eg_admin に分離
   const { data: egData } = await supabase
     .from('fixed_costs')
     .select('target_month, amount, status, cost_subcategory')
@@ -98,8 +101,13 @@ export async function getCostStatusDetails(): Promise<CostStatusDetail[]> {
 
   const results: CostStatusDetail[] = []
   for (const row of egData || []) {
+    const sub = row.cost_subcategory as string | null
+    let source: CostStatusDetail['source']
+    if (sub === '審査（実費入力）') source = 'review'
+    else if (sub === '管理費') source = 'eg_admin'
+    else continue
     results.push({
-      source: 'review',
+      source,
       target_month: row.target_month,
       amount: Number(row.amount) || 0,
       status: row.status || '見込み',
@@ -118,8 +126,9 @@ export async function getCostStatusDetails(): Promise<CostStatusDetail[]> {
   //   tonya_user_payment       → user_reward
   //   subcontract_1/2/3        → subcontract
   //   ad_delivery              → ad_delivery
+  //   product_cost             → product （§12-1 復活）
   //   misc                     → misc
-  // ※ product_cost / review_cost は廃止（§9-6 / §11）
+  // ※ review_cost は §11 で DB 廃止
   const { data: ccData } = await supabase
     .from('campaign_costs')
     .select('target_month, amount, campaign_id, cost_type')
@@ -127,6 +136,7 @@ export async function getCostStatusDetails(): Promise<CostStatusDetail[]> {
       'tonya_user_payment',
       'subcontract_1', 'subcontract_2', 'subcontract_3',
       'ad_delivery',
+      'product_cost',
       'misc',
     ])
 
@@ -145,6 +155,7 @@ export async function getCostStatusDetails(): Promise<CostStatusDetail[]> {
       let source: CostStatusDetail['source']
       if (row.cost_type === 'tonya_user_payment') source = 'user_reward'
       else if (row.cost_type === 'ad_delivery') source = 'ad_delivery'
+      else if (row.cost_type === 'product_cost') source = 'product'
       else if (row.cost_type === 'misc') source = 'misc'
       else source = 'subcontract'
       results.push({

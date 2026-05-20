@@ -55,15 +55,18 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
     maker: campaign?.maker || '',
     product: campaign?.product || '',
     status: campaign?.status || '未確定',
-    certainty: campaign?.certainty || '未確定',
+    certainty: campaign?.certainty || 'D.見込み+',
     type: campaign?.type || '既存',
     review: campaign?.review || '',
     url: campaign?.url || '',
     influencers: campaign?.influencers || '',
     memo: campaign?.memo || '',
+    creative_notes: campaign?.creative_notes || '',
+    schedule_notes: campaign?.schedule_notes || '',
     // PL
     retail_margin: campaign?.retail_margin != null ? (campaign.retail_margin * 100).toString() : '',
     agency_margin: campaign?.agency_margin != null ? (campaign.agency_margin * 100).toString() : '',
+    product_unit_price: campaign?.product_unit_price?.toString() || '',
     review_unit_price: campaign?.review_unit_price?.toString() || '',
     user_reward_unit_price: campaign?.user_reward_unit_price?.toString() || '',
     user_reward_amount: campaign?.user_reward_amount?.toString() || '',
@@ -109,6 +112,7 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
   const guaranteedViews = useMemo(() => budget > 0 && unitPrice > 0 ? calcGuaranteedViews(budget, unitPrice) : 0, [budget, unitPrice])
 
   // 単価のフォーム値（空なら placeholder のデフォルトを使う）
+  const productUnitPrice = parseFloat(form.product_unit_price) || 0
   const reviewUnitPrice = parseFloat(form.review_unit_price) || DEFAULT_REVIEW_UNIT_PRICE
   const userRewardUnitPrice = parseFloat(form.user_reward_unit_price) || DEFAULT_USER_REWARD_UNIT_PRICE
 
@@ -140,6 +144,7 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
     postersCount,
     retailMargin: parseFloat(form.retail_margin) || 0,
     agencyMargin: parseFloat(form.agency_margin) || 0,
+    productUnitPrice,
     reviewUnitPrice,
     userRewardUnitPrice,
     manualUserReward,
@@ -149,7 +154,7 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
   }), [
     budget, unitPrice, avgViews, postersCount,
     form.retail_margin, form.agency_margin,
-    reviewUnitPrice, userRewardUnitPrice,
+    productUnitPrice, reviewUnitPrice, userRewardUnitPrice,
     manualUserReward, subcontractFee, adDeliveryCost, miscCost,
   ])
 
@@ -192,6 +197,8 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
         url: form.url,
         influencers: form.influencers,
         memo: form.memo,
+        creative_notes: form.creative_notes,
+        schedule_notes: form.schedule_notes,
         budget: form.budget ? parseFloat(form.budget) : null,
         unit_price: form.unit_price ? parseFloat(form.unit_price) : null,
         avg_views: form.avg_views ? parseFloat(form.avg_views) : null,
@@ -206,6 +213,7 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
         billing_amount: budget > 0 ? Math.round(budget) : null,
         retail_margin: form.retail_margin ? parseFloat(form.retail_margin) / 100 : null,
         agency_margin: form.agency_margin ? parseFloat(form.agency_margin) / 100 : null,
+        product_unit_price: form.product_unit_price ? parseFloat(form.product_unit_price) : null,
         review_unit_price: form.review_unit_price ? parseFloat(form.review_unit_price) : null,
         user_reward_unit_price: form.user_reward_unit_price ? parseFloat(form.user_reward_unit_price) : null,
         user_reward_amount: form.user_reward_amount ? parseFloat(form.user_reward_amount) : null,
@@ -220,12 +228,14 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
         })),
       }
 
-      // 派生コスト（misc / ad_delivery / user_reward）の同期 payload
+      // 派生コスト（misc / ad_delivery / product / user_reward）の同期 payload
       // ※ §11: 審査費は EG ページから集計するので案件側では DB に書き込まない（二重計上排除）
+      // ※ §12-1: 商品代は復活（DB 書込あり）
       // ユーザー報酬は手動値があればそれ、無ければ自動計算（profit.userReward）
       const syncPayload = {
         userReward: profit.userReward > 0 ? profit.userReward : null,
         adDelivery: adDeliveryCost > 0 ? adDeliveryCost : null,
+        productCost: profit.productCost != null && profit.productCost > 0 ? profit.productCost : null,
         miscCost: miscCost > 0 ? miscCost : null,
       }
 
@@ -314,23 +324,29 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
         </div>
       </div>
 
-      {/* Certainty Selector */}
-      <div className="flex items-center gap-2 mb-2">
+      {/* Certainty Selector (§12-3: 5 値) */}
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
         <span className="text-sm font-medium text-gray-600">確度:</span>
-        {(['未確定', '見込み', '確定'] as const).map(c => (
-          <Button
-            key={c}
-            type="button"
-            size="sm"
-            variant={form.certainty === c ? 'default' : 'outline'}
-            className={form.certainty === c
-              ? c === '確定' ? 'bg-green-600 hover:bg-green-700' : c === '見込み' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-gray-500 hover:bg-gray-600'
-              : ''}
-            onClick={() => setForm(p => ({ ...p, certainty: c }))}
-          >
-            {c}
-          </Button>
-        ))}
+        {(['A.完了', 'B.進行中', 'C.受注確定', 'D.見込み+', 'E.見込み-'] as const).map(c => {
+          const activeColor =
+            c === 'A.完了'      ? 'bg-green-600 hover:bg-green-700'
+            : c === 'B.進行中'  ? 'bg-blue-600 hover:bg-blue-700'
+            : c === 'C.受注確定' ? 'bg-indigo-600 hover:bg-indigo-700'
+            : c === 'D.見込み+' ? 'bg-yellow-500 hover:bg-yellow-600'
+            : 'bg-gray-500 hover:bg-gray-600'
+          return (
+            <Button
+              key={c}
+              type="button"
+              size="sm"
+              variant={form.certainty === c ? 'default' : 'outline'}
+              className={form.certainty === c ? activeColor : ''}
+              onClick={() => setForm(p => ({ ...p, certainty: c }))}
+            >
+              {c}
+            </Button>
+          )
+        })}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -455,6 +471,15 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
                 <p className="text-xs text-gray-500">空欄なら審査費は計算されません</p>
               </div>
               <div className="space-y-2">
+                <Label>商品単価</Label>
+                <NumericInput
+                  value={form.product_unit_price}
+                  onChange={v => setForm(p => ({ ...p, product_unit_price: v }))}
+                  integerOnly
+                />
+                <p className="text-xs text-gray-500">商品代 = 投稿者数 × 商品単価</p>
+              </div>
+              <div className="space-y-2">
                 <Label>審査単価</Label>
                 <NumericInput
                   value={form.review_unit_price}
@@ -547,16 +572,37 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
             </CardContent>
           </Card>
 
-          {/* Section 5: Memo */}
+          {/* Section 5: Memo & 追加メモ（§12-4） */}
           <Card>
             <CardHeader><CardTitle className="text-base">メモ</CardTitle></CardHeader>
-            <CardContent>
-              <Textarea
-                value={form.memo}
-                onChange={e => setForm(p => ({ ...p, memo: e.target.value }))}
-                rows={4}
-                placeholder="自由記入欄..."
-              />
+            <CardContent className="space-y-4">
+              <div className="space-y-1">
+                <Label className="text-xs text-gray-500">クリエイティブの追加指示</Label>
+                <Textarea
+                  value={form.creative_notes}
+                  onChange={e => setForm(p => ({ ...p, creative_notes: e.target.value }))}
+                  rows={3}
+                  placeholder="クリエイティブに関する追加指示を記載..."
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-gray-500">スケジュール、進行の注意点</Label>
+                <Textarea
+                  value={form.schedule_notes}
+                  onChange={e => setForm(p => ({ ...p, schedule_notes: e.target.value }))}
+                  rows={3}
+                  placeholder="進行上の注意点や懸念事項を記載..."
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-gray-500">メモ</Label>
+                <Textarea
+                  value={form.memo}
+                  onChange={e => setForm(p => ({ ...p, memo: e.target.value }))}
+                  rows={4}
+                  placeholder="自由記入欄..."
+                />
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -578,6 +624,7 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
                 </p>
                 <RowKV label="審査費（試算）" value={profit.reviewCost} />
                 <RowKV label="ユーザー報酬" value={profit.userReward} />
+                <RowKV label="商品代" value={profit.productCost} />
                 <RowKV label="外注代理店フィー" value={profit.subcontract} />
                 <RowKV label="広告配信費" value={profit.adDelivery} />
                 <RowKV label="その他諸経費" value={profit.misc} />

@@ -65,6 +65,8 @@ function dbToFront(row) {
     viewComplete: row.view_complete || "",
     reportSend: row.report_send || "",
     memo: row.memo || "",
+    creativeNotes: row.creative_notes || "",
+    scheduleNotes: row.schedule_notes || "",
     meetingNotes: row.meeting_notes || [],
   };
 }
@@ -89,6 +91,8 @@ function frontToDb(c) {
     view_complete: c.viewComplete || null,
     report_send: c.reportSend || null,
     memo: c.memo || "",
+    creative_notes: c.creativeNotes || "",
+    schedule_notes: c.scheduleNotes || "",
     meeting_notes: c.meetingNotes || [],
   };
 }
@@ -143,7 +147,7 @@ function CampaignForm({ initial, onSave, onClose, title }) {
       maker:"",product:"",status:"未確定",type:"既存",
       budget:"",unitPrice:1.3,avgViews:"",influencers:"",review:"",retailer:"",url:"",
       esCollection:"",infoRelease:"",postStart:"",postEnd:"",viewComplete:"",reportSend:"",
-      memo:"",meetingNotes:[],
+      memo:"",creativeNotes:"",scheduleNotes:"",meetingNotes:[],
       ...initial,
     };
     return { ...base, budget:base.budget??"", unitPrice:base.unitPrice??1.3, avgViews:base.avgViews??"" };
@@ -215,6 +219,26 @@ function CampaignForm({ initial, onSave, onClose, title }) {
           {MS_DEFS.map(m=>(
             <div key={m.k}><label style={lS}>{m.label}</label><input style={iS} type="date" value={f[m.k]||""} onChange={e=>s(m.k,e.target.value)} /></div>
           ))}
+        </div>
+
+        <div style={{marginBottom:16}}>
+          <label style={lS}>クリエイティブの追加指示</label>
+          <textarea
+            style={{...iS,minHeight:60,resize:"vertical",fontFamily:"inherit"}}
+            value={f.creativeNotes||""}
+            onChange={e=>s("creativeNotes",e.target.value)}
+            placeholder="クリエイティブに関する追加指示を記載..."
+          />
+        </div>
+
+        <div style={{marginBottom:16}}>
+          <label style={lS}>スケジュール、進行の注意点</label>
+          <textarea
+            style={{...iS,minHeight:60,resize:"vertical",fontFamily:"inherit"}}
+            value={f.scheduleNotes||""}
+            onChange={e=>s("scheduleNotes",e.target.value)}
+            placeholder="進行上の注意点や懸念事項を記載..."
+          />
         </div>
 
         <div style={{marginBottom:20}}><label style={lS}>メモ</label><textarea style={{...iS,minHeight:70,resize:"vertical",fontFamily:"inherit"}} value={f.memo} onChange={e=>s("memo",e.target.value)} placeholder="案件メモを自由に記載..." /></div>

@@ -38,22 +38,31 @@ type CostRow = {
   costTypes?: string[]
 }
 
-// 案件コスト（原価, COGS）— 5項目
-//   ※ 審査費は §11 で EG ページの実費ベース（「審査（実費入力）」+「管理費」を合算）に変更。
+// 案件コスト（原価, COGS）— 6項目（§12-1 で商品代復活）
+//   ※ 審査費は §11→§12-5 で EG ページの「審査（実費入力）」のみベース。
 //      campaign_costs 由来ではないため案件別内訳は出せない（expandable: false）。
 const COGS_ROWS: CostRow[] = [
   { key: 'review_cost',      label: '審査費',       plKey: 'review_cost',      expandable: false },
   { key: 'user_reward_cost', label: 'ユーザー報酬',  plKey: 'user_reward_cost', expandable: true, costTypes: ['tonya_user_payment'] },
+  { key: 'product_cost',     label: '商品代',       plKey: 'product_cost',     expandable: true, costTypes: ['product_cost'] },
   { key: 'subcontract_cost', label: '外注費',       plKey: 'subcontract_cost', expandable: true, costTypes: ['subcontract_1', 'subcontract_2', 'subcontract_3'] },
   { key: 'ad_delivery_cost', label: '広告配信費',    plKey: 'ad_delivery_cost', expandable: true, costTypes: ['ad_delivery'] },
   { key: 'misc_cost',        label: 'その他諸経費',  plKey: 'misc_cost',        expandable: true, costTypes: ['misc'] },
 ]
 
-// 販管費（SG&A, 非案件コスト）— 2項目
+// 販管費（SG&A, 非案件コスト）— 3項目（§12-5 で EG管理費を再分離）
 const SGA_ROWS: CostRow[] = [
+  { key: 'eg_admin_cost',   label: 'EG管理費',                          plKey: 'eg_admin_cost',   expandable: false },
   { key: 'agency_fee_cost', label: '営業代理店フィー',                    plKey: 'agency_fee_cost', expandable: false },
   { key: 'personnel_cost',  label: 'アルバイト・イベント・インターン',     plKey: 'personnel_cost',  expandable: false },
 ]
+
+// §12-3: 「確定」扱いの certainty 値（A.完了 / C.受注確定）
+function isConfirmedStatus(status: string): boolean {
+  return status === 'A.完了' || status === 'C.受注確定'
+       // 後方互換: migration 前データ
+       || status === '確定'
+}
 
 export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDetails }: PLSummaryTableProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -61,7 +70,7 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
 
   const filteredRevenueDetails = useMemo(() => {
     if (viewMode === 'all') return revenueDetails
-    return revenueDetails.filter(rd => rd.certainty === '確定')
+    return revenueDetails.filter(rd => isConfirmedStatus(rd.certainty))
   }, [revenueDetails, viewMode])
 
   // 確定モード: costStatusDetails の 'confirmed' のみで再集計
@@ -73,10 +82,15 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
       confirmedRevByMonth[rd.month] = (confirmedRevByMonth[rd.month] || 0) + rd.billing_amount
     })
 
+    // fixed_costs / personnel_payments の status は旧 '確定' 文字列のまま
+    // campaigns.certainty は §12-3 で A.完了/C.受注確定 に移行済み
+    const isConfirmed = (status: string) =>
+      isConfirmedStatus(status) || status === '確定'
+
     const sumBySource = (src: CostStatusDetail['source']): Record<string, number> => {
       const out: Record<string, number> = {}
       costStatusDetails
-        .filter(c => c.source === src && c.status === '確定')
+        .filter(c => c.source === src && isConfirmed(c.status))
         .forEach(c => {
           out[c.target_month] = (out[c.target_month] || 0) + c.amount
         })
@@ -87,7 +101,9 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
     const ur = sumBySource('user_reward')
     const sub = sumBySource('subcontract')
     const ad = sumBySource('ad_delivery')
-    const review = sumBySource('review')   // §11: EG「審査（実費入力）」+「管理費」合算
+    const review = sumBySource('review')        // §12-5: EG「審査（実費入力）」のみ
+    const egAdmin = sumBySource('eg_admin')      // §12-5: EG「管理費」
+    const product = sumBySource('product')       // §12-1 復活: 商品代
     const misc = sumBySource('misc')
     const agency = sumBySource('agency_fee')
 
@@ -95,23 +111,27 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
       const revenue = confirmedRevByMonth[d.month] || 0
       const reviewCost = review[d.month] || 0
       const userReward = ur[d.month] || 0
+      const productCost = product[d.month] || 0
       const subcontract = sub[d.month] || 0
       const adDelivery = ad[d.month] || 0
       const miscCost = misc[d.month] || 0
       const personnelCost = personnel[d.month] || 0
-      const eGuardian = reviewCost   // EG 合算（互換用）
+      const egAdminCost = egAdmin[d.month] || 0
+      const eGuardian = reviewCost + egAdminCost  // 補足: 審査費+管理費 合計
       const agencyFee = agency[d.month] || 0
-      const cogsTotal = reviewCost + userReward + subcontract + adDelivery + miscCost
-      const sgaTotal = agencyFee + personnelCost
+      const cogsTotal = reviewCost + userReward + productCost + subcontract + adDelivery + miscCost
+      const sgaTotal = egAdminCost + agencyFee + personnelCost
       const totalCost = cogsTotal + sgaTotal
       return {
         ...d,
         revenue,
         review_cost: reviewCost,
         user_reward_cost: userReward,
+        product_cost: productCost,
         subcontract_cost: subcontract,
         ad_delivery_cost: adDelivery,
         misc_cost: miscCost,
+        eg_admin_cost: egAdminCost,
         agency_fee_cost: agencyFee,
         personnel_cost: personnelCost,
         e_guardian_cost: eGuardian,

@@ -4,7 +4,13 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Campaign, getBillingMonth } from '@/lib/types'
-import { calcUserRewardAmount, calcRevenue, formatCurrency, formatMonth } from '@/lib/calculations'
+import {
+  calcUserRewardAmount,
+  calcCampaignProfit,
+  calcRevenue,
+  formatCurrency,
+  formatMonth,
+} from '@/lib/calculations'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -15,8 +21,16 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 
+interface CostMaps {
+  subcontractByCampaign: Record<number, number>
+  adDeliveryByCampaign: Record<number, number>
+  productByCampaign: Record<number, number>
+  miscByCampaign: Record<number, number>
+}
+
 interface CampaignListProps {
   campaigns: Campaign[]
+  costMaps?: CostMaps  // §12-2: 合計費用・粗利を計算するための一括取得済み集計
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -30,10 +44,18 @@ function StatusBadge({ status }: { status: string }) {
   return <Badge className={colors[status] || 'bg-gray-100 text-gray-500'}>{status}</Badge>
 }
 
+// §12-3: 5値の確度色
+const CERTAINTY_LIST = ['A.完了', 'B.進行中', 'C.受注確定', 'D.見込み+', 'E.見込み-'] as const
 const CERTAINTY_COLORS: Record<string, string> = {
-  '未確定': 'text-gray-600',
-  '見込み': 'text-orange-700',
-  '確定': 'text-green-700',
+  'A.完了':      'text-green-700',
+  'B.進行中':    'text-blue-700',
+  'C.受注確定':  'text-indigo-700',
+  'D.見込み+':   'text-yellow-700',
+  'E.見込み-':   'text-gray-600',
+  // 旧値の後方互換（migration 前 / フェールセーフ）
+  '確定':       'text-green-700',
+  '見込み':     'text-blue-700',
+  '未確定':     'text-yellow-700',
 }
 
 function InlineRewardInput({ currentAmount, isManual, onSave }: {
@@ -80,7 +102,7 @@ function InlineRewardInput({ currentAmount, isManual, onSave }: {
   )
 }
 
-export function CampaignList({ campaigns }: CampaignListProps) {
+export function CampaignList({ campaigns, costMaps }: CampaignListProps) {
   const router = useRouter()
 
   async function handleCertaintyChange(id: number, certainty: string) {
@@ -117,6 +139,8 @@ export function CampaignList({ campaigns }: CampaignListProps) {
               <TableHead className="text-right">請求月（再生完了月）</TableHead>
               <TableHead className="text-right">予算</TableHead>
               <TableHead className="text-right">請求金額</TableHead>
+              <TableHead className="text-right">合計費用</TableHead>
+              <TableHead className="text-right">粗利</TableHead>
               <TableHead className="text-right">ユーザー報酬額</TableHead>
               <TableHead className="text-center">ステータス</TableHead>
               <TableHead className="text-center">確度</TableHead>
@@ -132,7 +156,6 @@ export function CampaignList({ campaigns }: CampaignListProps) {
               )
               const isManual = campaign.user_reward_amount != null && campaign.user_reward_amount > 0
               // 請求金額（実請求額）= 予算 × (1 - 小売マージン - 代理店マージン)
-              // retail_margin / agency_margin は DB に小数（例 0.15）で保存されている
               const invoiceAmount = campaign.budget != null && campaign.budget > 0
                 ? Math.round(calcRevenue(
                     campaign.budget,
@@ -140,6 +163,33 @@ export function CampaignList({ campaigns }: CampaignListProps) {
                     campaign.agency_margin ?? 0,
                   ))
                 : null
+
+              // §12-2: 案件単位の試算ベース（calcCampaignProfit）。
+              //   EG 審査費は含まず、posters_count × review_unit_price のみを審査費として加算。
+              const subcontractFee = costMaps?.subcontractByCampaign[campaign.id] ?? 0
+              const adDeliveryCost = costMaps?.adDeliveryByCampaign[campaign.id] ?? 0
+              const miscCost = costMaps?.miscByCampaign[campaign.id] ?? 0
+              const profit = calcCampaignProfit({
+                budget: campaign.budget ?? 0,
+                unitPrice: campaign.unit_price ?? 0,
+                avgViews: campaign.avg_views ?? 0,
+                postersCount: campaign.posters_count ?? null,
+                retailMargin: (campaign.retail_margin ?? 0) * 100,
+                agencyMargin: (campaign.agency_margin ?? 0) * 100,
+                productUnitPrice: campaign.product_unit_price ?? 0,
+                reviewUnitPrice: campaign.review_unit_price ?? 1000,
+                userRewardUnitPrice: campaign.user_reward_unit_price ?? 0.4,
+                manualUserReward: campaign.user_reward_amount ?? null,
+                subcontractFee,
+                adDeliveryCost,
+                miscCost,
+              })
+              const totalCost = (campaign.budget ?? 0) > 0 ? profit.totalCost : null
+              const grossProfit = (campaign.budget ?? 0) > 0 ? profit.grossProfit : null
+              const profitClass =
+                grossProfit == null ? 'text-gray-400' :
+                grossProfit > 0 ? 'text-green-700 font-medium' :
+                grossProfit < 0 ? 'text-red-600 font-medium' : ''
 
               return (
                 <TableRow key={campaign.id} className="cursor-pointer hover:bg-gray-50">
@@ -152,6 +202,8 @@ export function CampaignList({ campaigns }: CampaignListProps) {
                   <TableCell className="text-right text-sm">{formatMonth(getBillingMonth(campaign))}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatCurrency(campaign.budget)}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatCurrency(invoiceAmount)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-sm">{formatCurrency(totalCost)}</TableCell>
+                  <TableCell className={`text-right tabular-nums text-sm ${profitClass}`}>{formatCurrency(grossProfit)}</TableCell>
                   <TableCell className="text-right" onClick={e => e.stopPropagation()}>
                     <InlineRewardInput
                       currentAmount={rewardAmount}
@@ -164,16 +216,16 @@ export function CampaignList({ campaigns }: CampaignListProps) {
                   </TableCell>
                   <TableCell className="text-center" onClick={e => e.stopPropagation()}>
                     <Select
-                      value={campaign.certainty || '未確定'}
+                      value={campaign.certainty || 'D.見込み+'}
                       onValueChange={(v) => v && handleCertaintyChange(campaign.id, v)}
                     >
-                      <SelectTrigger className={`h-7 text-xs w-[90px] ${CERTAINTY_COLORS[campaign.certainty] || ''}`}>
+                      <SelectTrigger className={`h-7 text-xs w-[110px] ${CERTAINTY_COLORS[campaign.certainty] || ''}`}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="未確定">未確定</SelectItem>
-                        <SelectItem value="見込み">見込み</SelectItem>
-                        <SelectItem value="確定">確定</SelectItem>
+                        {CERTAINTY_LIST.map(c => (
+                          <SelectItem key={c} value={c}>{c}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </TableCell>
@@ -182,7 +234,7 @@ export function CampaignList({ campaigns }: CampaignListProps) {
             })}
             {campaigns.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="text-center text-gray-500 py-8">
+                <TableCell colSpan={10} className="text-center text-gray-500 py-8">
                   案件がありません
                 </TableCell>
               </TableRow>

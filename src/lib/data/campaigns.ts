@@ -12,6 +12,45 @@ export async function getCampaigns(): Promise<Campaign[]> {
   return data || []
 }
 
+// §12-2: 案件一覧で「合計費用」「粗利」を案件ごとに計算するため、
+// 全案件の subcontract / campaign_costs を一括取得して案件 ID で集計したマップを返す。
+export interface CampaignCostMaps {
+  subcontractByCampaign: Record<number, number>   // Σ delegated_amount
+  adDeliveryByCampaign: Record<number, number>     // campaign_costs cost_type='ad_delivery'
+  productByCampaign: Record<number, number>        // campaign_costs cost_type='product_cost'
+  miscByCampaign: Record<number, number>           // campaign_costs cost_type='misc'
+}
+
+export async function getCampaignCostMaps(): Promise<CampaignCostMaps> {
+  const supabase = await createClient()
+  const subcontractByCampaign: Record<number, number> = {}
+  const adDeliveryByCampaign: Record<number, number> = {}
+  const productByCampaign: Record<number, number> = {}
+  const miscByCampaign: Record<number, number> = {}
+
+  const { data: subs } = await supabase
+    .from('campaign_subcontracts')
+    .select('campaign_id, delegated_amount')
+  for (const s of subs || []) {
+    const cid = s.campaign_id as number
+    subcontractByCampaign[cid] = (subcontractByCampaign[cid] || 0) + (Number(s.delegated_amount) || 0)
+  }
+
+  const { data: costs } = await supabase
+    .from('campaign_costs')
+    .select('campaign_id, cost_type, amount')
+    .in('cost_type', ['ad_delivery', 'product_cost', 'misc'])
+  for (const c of costs || []) {
+    const cid = c.campaign_id as number
+    const amt = Number(c.amount) || 0
+    if (c.cost_type === 'ad_delivery') adDeliveryByCampaign[cid] = (adDeliveryByCampaign[cid] || 0) + amt
+    else if (c.cost_type === 'product_cost') productByCampaign[cid] = (productByCampaign[cid] || 0) + amt
+    else if (c.cost_type === 'misc') miscByCampaign[cid] = (miscByCampaign[cid] || 0) + amt
+  }
+
+  return { subcontractByCampaign, adDeliveryByCampaign, productByCampaign, miscByCampaign }
+}
+
 export async function getCampaign(id: number): Promise<Campaign | null> {
   const supabase = await createClient()
   const { data, error } = await supabase
