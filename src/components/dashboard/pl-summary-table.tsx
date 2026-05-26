@@ -2,10 +2,11 @@
 
 import React, { useState, useMemo } from 'react'
 import Link from 'next/link'
-import { ChevronRight, ChevronDown } from 'lucide-react'
+import { ChevronRight, ChevronDown, Download } from 'lucide-react'
 import { MonthlyPL, RevenueDetail, CostDetail } from '@/lib/types'
 import { CostStatusDetail } from '@/lib/data/dashboard'
 import { formatCurrency, formatMonth, formatPercent } from '@/lib/calculations'
+import { rowsToCsv, downloadCsv } from '@/lib/csv'
 import {
   Table,
   TableBody,
@@ -57,68 +58,99 @@ const SGA_ROWS: CostRow[] = [
   { key: 'personnel_cost',  label: 'アルバイト・イベント・インターン',     plKey: 'personnel_cost',  expandable: false },
 ]
 
-// §12-3: 「確定」扱いの certainty 値（A.完了 / C.受注確定）
-function isConfirmedStatus(status: string): boolean {
-  return status === 'A.完了' || status === 'C.受注確定'
-       // 後方互換: migration 前データ
-       || status === '確定'
+// §14: 確度 5 値マルチセレクト
+const ALL_CERTAINTY = ['A.完了', 'B.進行中', 'C.受注確定', 'D.見込み+', 'E.見込み-'] as const
+type Certainty = typeof ALL_CERTAINTY[number]
+
+// 旧文字列（'確定'/'見込み'/'未確定'）を 5 値へ正規化。不明値は null（PL から除外）
+function normalizeCertainty(raw: string): Certainty | null {
+  if ((ALL_CERTAINTY as readonly string[]).includes(raw)) return raw as Certainty
+  if (raw === '確定') return 'A.完了'
+  if (raw === '見込み') return 'B.進行中'
+  if (raw === '未確定') return 'D.見込み+'
+  return null
+}
+
+// ボタン選択時の色（確度別）
+const CERTAINTY_BTN_COLOR: Record<Certainty, string> = {
+  'A.完了':    'bg-emerald-600 hover:bg-emerald-700',
+  'B.進行中':  'bg-blue-600 hover:bg-blue-700',
+  'C.受注確定': 'bg-violet-600 hover:bg-violet-700',
+  'D.見込み+': 'bg-amber-500 hover:bg-amber-600',
+  'E.見込み-': 'bg-zinc-400 hover:bg-zinc-500',
 }
 
 export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDetails }: PLSummaryTableProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const [viewMode, setViewMode] = useState<'all' | 'confirmed'>('all')
+  // §14: 確度 5 値マルチセレクト。初期は全選択（＝従来の「全体」と同じ集計）
+  const [certaintySet, setCertaintySet] = useState<Set<Certainty>>(() => new Set(ALL_CERTAINTY))
 
-  const filteredRevenueDetails = useMemo(() => {
-    if (viewMode === 'all') return revenueDetails
-    return revenueDetails.filter(rd => isConfirmedStatus(rd.certainty))
-  }, [revenueDetails, viewMode])
+  const isAllSelected = certaintySet.size === ALL_CERTAINTY.length
+  const isNoneSelected = certaintySet.size === 0
 
-  // 確定モード: costStatusDetails の 'confirmed' のみで再集計
-  const adjustedData = useMemo(() => {
-    if (viewMode === 'all') return data
-
-    const confirmedRevByMonth: Record<string, number> = {}
-    filteredRevenueDetails.forEach(rd => {
-      confirmedRevByMonth[rd.month] = (confirmedRevByMonth[rd.month] || 0) + rd.billing_amount
+  function toggleCertainty(c: Certainty) {
+    setCertaintySet(prev => {
+      const next = new Set(prev)
+      if (next.has(c)) { next.delete(c) } else { next.add(c) }
+      return next
     })
+  }
 
-    // fixed_costs / personnel_payments の status は旧 '確定' 文字列のまま
-    // campaigns.certainty は §12-3 で A.完了/C.受注確定 に移行済み
-    const isConfirmed = (status: string) =>
-      isConfirmedStatus(status) || status === '確定'
+  // 案件確度（campaigns.certainty）が選択集合に含まれるか
+  const matchesFilter = useMemo(() => {
+    return (raw: string): boolean => {
+      const c = normalizeCertainty(raw)
+      return c !== null && certaintySet.has(c)
+    }
+  }, [certaintySet])
+
+  // 案件売上は確度フィルタ対象
+  const filteredRevenueDetails = useMemo(() => {
+    return revenueDetails.filter(rd => matchesFilter(rd.certainty))
+  }, [revenueDetails, matchesFilter])
+
+  // §14: 確度フィルタを反映して再集計。
+  //   ・案件由来コスト（user_reward / product / subcontract / ad_delivery / misc / agency_fee）
+  //     … campaigns.certainty でフィルタ
+  //   ・fixed_costs 由来（review = EG審査実費 / eg_admin = EG管理費）と personnel
+  //     … 確度を持たないので常に全額計上（view の値そのまま）
+  const adjustedData = useMemo(() => {
+    const revByMonth: Record<string, number> = {}
+    filteredRevenueDetails.forEach(rd => {
+      revByMonth[rd.month] = (revByMonth[rd.month] || 0) + rd.billing_amount
+    })
 
     const sumBySource = (src: CostStatusDetail['source']): Record<string, number> => {
       const out: Record<string, number> = {}
       costStatusDetails
-        .filter(c => c.source === src && isConfirmed(c.status))
+        .filter(c => c.source === src && matchesFilter(c.status))
         .forEach(c => {
           out[c.target_month] = (out[c.target_month] || 0) + c.amount
         })
       return out
     }
 
-    const personnel = sumBySource('personnel')
+    // 確度フィルタ対象（campaigns 由来）
     const ur = sumBySource('user_reward')
+    const product = sumBySource('product')
     const sub = sumBySource('subcontract')
     const ad = sumBySource('ad_delivery')
-    const review = sumBySource('review')        // §12-5: EG「審査（実費入力）」のみ
-    const egAdmin = sumBySource('eg_admin')      // §12-5: EG「管理費」
-    const product = sumBySource('product')       // §12-1 復活: 商品代
     const misc = sumBySource('misc')
     const agency = sumBySource('agency_fee')
 
     return data.map(d => {
-      const revenue = confirmedRevByMonth[d.month] || 0
-      const reviewCost = review[d.month] || 0
+      const revenue = revByMonth[d.month] || 0
       const userReward = ur[d.month] || 0
       const productCost = product[d.month] || 0
       const subcontract = sub[d.month] || 0
       const adDelivery = ad[d.month] || 0
       const miscCost = misc[d.month] || 0
-      const personnelCost = personnel[d.month] || 0
-      const egAdminCost = egAdmin[d.month] || 0
-      const eGuardian = reviewCost + egAdminCost  // 補足: 審査費+管理費 合計
       const agencyFee = agency[d.month] || 0
+      // フィルタ非対象（fixed_costs / personnel）は view 値をそのまま使う
+      const reviewCost = d.review_cost
+      const egAdminCost = d.eg_admin_cost
+      const personnelCost = d.personnel_cost
+      const eGuardian = reviewCost + egAdminCost  // 補足: 審査費+管理費 合計
       const cogsTotal = reviewCost + userReward + productCost + subcontract + adDelivery + miscCost
       const sgaTotal = egAdminCost + agencyFee + personnelCost
       const totalCost = cogsTotal + sgaTotal
@@ -141,7 +173,7 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
         operating_profit: revenue - totalCost,
       }
     })
-  }, [data, filteredRevenueDetails, costStatusDetails, viewMode])
+  }, [data, filteredRevenueDetails, costStatusDetails, matchesFilter])
 
   const data2025 = adjustedData.filter(d => d.month.startsWith('2025'))
   const data2026 = adjustedData.filter(d => d.month.startsWith('2026'))
@@ -288,28 +320,124 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
   const operatingMargin2026 = sumByKey(data2026, 'revenue') > 0
     ? sumByKey(data2026, 'operating_profit') / sumByKey(data2026, 'revenue') : 0
 
+  // §14: 選択集合をファイル名用ラベルに（A〜E の先頭1文字を連結）
+  function certaintyLabel(): string {
+    if (isAllSelected) return '全件'
+    if (isNoneSelected) return '空'
+    return ALL_CERTAINTY.filter(c => certaintySet.has(c)).map(c => c.charAt(0)).join('')
+  }
+
+  // §13/§14: 現在表示中の PL を CSV としてダウンロード
+  function handleExportCsv() {
+    const months = adjustedData.map(d => formatMonth(d.month))
+    const headers = ['項目', ...months, '2025年計', '2026年計']
+    const dataRows: (string | number)[][] = [headers]
+
+    const pushRow = (
+      label: string,
+      accessor: (d: typeof adjustedData[number]) => number,
+      formatFn: (v: number) => string = formatCurrency,
+    ) => {
+      const cells: (string | number)[] = [label]
+      adjustedData.forEach(d => cells.push(formatFn(accessor(d))))
+      cells.push(formatFn(data2025.reduce((s, d) => s + accessor(d), 0)))
+      cells.push(formatFn(data2026.reduce((s, d) => s + accessor(d), 0)))
+      dataRows.push(cells)
+    }
+    const pushRate = (
+      label: string,
+      accessor: (d: typeof adjustedData[number]) => number,  // 0〜1
+      yearRate: (rows: typeof data2025) => number,
+    ) => {
+      const cells: (string | number)[] = [label]
+      adjustedData.forEach(d => cells.push(formatPercent(accessor(d))))
+      cells.push(formatPercent(yearRate(data2025)))
+      cells.push(formatPercent(yearRate(data2026)))
+      dataRows.push(cells)
+    }
+
+    // 売上
+    pushRow('案件収益', d => d.revenue)
+    // 原価
+    pushRow('審査費', d => d.review_cost)
+    pushRow('ユーザー報酬', d => d.user_reward_cost)
+    pushRow('商品代', d => d.product_cost)
+    pushRow('外注費', d => d.subcontract_cost)
+    pushRow('広告配信費', d => d.ad_delivery_cost)
+    pushRow('その他諸経費', d => d.misc_cost)
+    pushRow('原価合計', d => d.cogs_total)
+    pushRow('粗利', d => d.revenue - d.cogs_total)
+    pushRate('粗利率',
+      d => d.revenue > 0 ? (d.revenue - d.cogs_total) / d.revenue : 0,
+      rows => {
+        const rev = sumByKey(rows, 'revenue')
+        return rev > 0 ? (rev - sumByKey(rows, 'cogs_total')) / rev : 0
+      })
+    // 販管費
+    pushRow('EG管理費', d => d.eg_admin_cost)
+    pushRow('営業代理店フィー', d => d.agency_fee_cost)
+    pushRow('アルバイト・イベント・インターン', d => d.personnel_cost)
+    pushRow('販管費合計', d => d.sga_total)
+    // 合計
+    pushRow('コスト合計', d => d.cogs_total + d.sga_total)
+    pushRow('営業利益', d => d.operating_profit)
+    pushRate('営業利益率',
+      d => d.revenue > 0 ? d.operating_profit / d.revenue : 0,
+      rows => {
+        const rev = sumByKey(rows, 'revenue')
+        return rev > 0 ? sumByKey(rows, 'operating_profit') / rev : 0
+      })
+
+    const csv = rowsToCsv(dataRows)
+    const today = new Date().toISOString().slice(0, 10)
+    downloadCsv(`月次PL_${certaintyLabel()}_${today}.csv`, csv)
+  }
+
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center gap-4">
-          <CardTitle className="text-lg">月次PL</CardTitle>
-          <div className="flex gap-2">
-            <Button
-              variant={viewMode === 'all' ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setViewMode('all')}
-            >
-              全体（見込み含む）
-            </Button>
-            <Button
-              variant={viewMode === 'confirmed' ? 'default' : 'outline'}
-              size="sm"
-              className={viewMode === 'confirmed' ? 'bg-green-600 hover:bg-green-700' : ''}
-              onClick={() => setViewMode('confirmed')}
-            >
-              確定のみ
-            </Button>
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap">
+            <CardTitle className="text-lg whitespace-nowrap">月次PL</CardTitle>
+            <div className="flex gap-1.5 flex-wrap">
+              {ALL_CERTAINTY.map(c => {
+                const active = certaintySet.has(c)
+                return (
+                  <Button
+                    key={c}
+                    size="sm"
+                    variant={active ? 'default' : 'outline'}
+                    className={active ? CERTAINTY_BTN_COLOR[c] : ''}
+                    onClick={() => toggleCertainty(c)}
+                  >
+                    {c}
+                  </Button>
+                )
+              })}
+            </div>
+            <div className="flex gap-1.5">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setCertaintySet(new Set(ALL_CERTAINTY))}
+                disabled={isAllSelected}
+              >
+                全選択
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setCertaintySet(new Set())}
+                disabled={isNoneSelected}
+              >
+                クリア
+              </Button>
+            </div>
           </div>
+          <Button size="sm" variant="outline" onClick={handleExportCsv}>
+            <Download className="h-4 w-4 mr-1" />
+            CSV
+          </Button>
         </div>
       </CardHeader>
       <CardContent className="overflow-x-auto">
