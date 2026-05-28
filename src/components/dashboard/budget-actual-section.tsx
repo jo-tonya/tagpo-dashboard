@@ -27,19 +27,10 @@ import {
 
 interface Props {
   monthlyPL: MonthlyPL[]
-  budgets: MonthlyBudget[]
+  budgets?: MonthlyBudget[]  // §15-7: 互換のため受け取るが現状未使用（/budgets ページは別運用）
 }
 
 type ViewMode = 'monthly' | 'quarterly'
-
-// 粗利 = 売上 - 案件コスト合計（cogs_total）。personnel / agency_fee は販管費なので含めない。
-function calcActualGrossProfit(d: MonthlyPL): number {
-  return d.revenue - d.cogs_total
-}
-
-function calcBudgetGrossProfit(b: MonthlyBudget): number {
-  return Math.round(b.revenue * b.gross_margin_rate)
-}
 
 // 月 'YYYY-MM-DD' が属する決算年度（決算月＝11月、年度開始＝12月）
 function fiscalYearOf(month: string): number {
@@ -48,10 +39,6 @@ function fiscalYearOf(month: string): number {
 }
 
 // 月→四半期（FY ベース）
-//   Q1: 12,1,2 / Q2: 3,4,5 / Q3: 6,7,8 / Q4: 9,10,11
-//   label 例:
-//     'FY2026 Q1 (2025/12月〜2026/02月)' （年跨ぎ）
-//     'FY2025 Q4 (2025/09月〜11月)'      （同年内）
 function fiscalQuarterOf(month: string): { fy: number; q: 1 | 2 | 3 | 4; key: string; label: string } {
   const m = Number(month.slice(5, 7))
   const fy = fiscalYearOf(month)
@@ -105,35 +92,24 @@ const formatYAxis = (value: number) => {
 interface Bucket {
   key: string
   label: string
-  budgetRevenue: number
-  actualRevenue: number
-  budgetGross: number
-  actualGross: number
+  budgetRevenue: number   // §15-7: campaigns.budget の月別合計
+  actualRevenue: number   // §15-7: campaigns.billing_amount の月別合計
 }
 
-function buildBuckets(monthlyPL: MonthlyPL[], budgets: MonthlyBudget[], viewMode: ViewMode): {
+function buildBuckets(monthlyPL: MonthlyPL[], viewMode: ViewMode): {
   monthly: Bucket[]
   buckets: Bucket[]
   fiscalYears: number[]
-  fiscalSums: Record<number, { budgetRevenue: number; actualRevenue: number; budgetGross: number; actualGross: number }>
+  fiscalSums: Record<number, { budgetRevenue: number; actualRevenue: number }>
 } {
-  const budgetByMonth: Record<string, MonthlyBudget> = {}
-  for (const b of budgets) budgetByMonth[b.month] = b
+  // §15-7: 売上予算 = MonthlyPL.budget、売上実績 = MonthlyPL.revenue
+  const monthly: Bucket[] = monthlyPL.map(d => ({
+    key: d.month.slice(0, 7),
+    label: formatMonth(d.month),
+    budgetRevenue: d.budget,
+    actualRevenue: d.revenue,
+  }))
 
-  // 月単位ベース
-  const monthly: Bucket[] = monthlyPL.map(d => {
-    const b = budgetByMonth[d.month]
-    return {
-      key: d.month.slice(0, 7),
-      label: formatMonth(d.month),
-      budgetRevenue: b?.revenue ?? 0,
-      actualRevenue: d.revenue,
-      budgetGross: b ? calcBudgetGrossProfit(b) : 0,
-      actualGross: calcActualGrossProfit(d),
-    }
-  })
-
-  // 表示用バケット
   let buckets: Bucket[]
   if (viewMode === 'monthly') {
     buckets = monthly
@@ -147,52 +123,42 @@ function buildBuckets(monthlyPL: MonthlyPL[], budgets: MonthlyBudget[], viewMode
         label: meta.label,
         budgetRevenue: 0,
         actualRevenue: 0,
-        budgetGross: 0,
-        actualGross: 0,
       }
       cur.budgetRevenue += m.budgetRevenue
       cur.actualRevenue += m.actualRevenue
-      cur.budgetGross += m.budgetGross
-      cur.actualGross += m.actualGross
       map.set(meta.key, cur)
     }
     buckets = Array.from(map.values()).sort((a, b) => a.key.localeCompare(b.key))
   }
 
-  // 年度合計（モードに依らず月単位データから集計）
   const fySet = new Set<number>()
   for (const d of monthlyPL) fySet.add(fiscalYearOf(d.month))
   const fiscalYears = Array.from(fySet).sort((a, b) => a - b)
 
-  const fiscalSums: Record<number, { budgetRevenue: number; actualRevenue: number; budgetGross: number; actualGross: number }> = {}
-  for (const fy of fiscalYears) {
-    fiscalSums[fy] = { budgetRevenue: 0, actualRevenue: 0, budgetGross: 0, actualGross: 0 }
-  }
+  const fiscalSums: Record<number, { budgetRevenue: number; actualRevenue: number }> = {}
+  for (const fy of fiscalYears) fiscalSums[fy] = { budgetRevenue: 0, actualRevenue: 0 }
   for (let i = 0; i < monthlyPL.length; i++) {
     const fy = fiscalYearOf(monthlyPL[i].month)
     const s = fiscalSums[fy]
     if (!s) continue
     s.budgetRevenue += monthly[i].budgetRevenue
     s.actualRevenue += monthly[i].actualRevenue
-    s.budgetGross += monthly[i].budgetGross
-    s.actualGross += monthly[i].actualGross
   }
 
   return { monthly, buckets, fiscalYears, fiscalSums }
 }
 
 // =====================================================
-// 親コンポーネント: viewMode を保持して Charts と Table の両方に渡す
+// 親コンポーネント
 // =====================================================
-export function BudgetActualSection({ monthlyPL, budgets }: Props) {
+export function BudgetActualSection({ monthlyPL }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('monthly')
 
   return (
     <>
-      <BudgetActualCharts monthlyPL={monthlyPL} budgets={budgets} viewMode={viewMode} />
+      <BudgetActualCharts monthlyPL={monthlyPL} viewMode={viewMode} />
       <BudgetActualTable
         monthlyPL={monthlyPL}
-        budgets={budgets}
         viewMode={viewMode}
         setViewMode={setViewMode}
       />
@@ -201,84 +167,60 @@ export function BudgetActualSection({ monthlyPL, budgets }: Props) {
 }
 
 // =====================================================
-// 子コンポーネント: グラフ 2 枚（売上 予実 / 粗利 予実）
+// 売上 予実グラフ（§15-7: 粗利グラフは省略）
 // =====================================================
-interface ChartsProps extends Props {
+interface ChartsProps {
+  monthlyPL: MonthlyPL[]
   viewMode: ViewMode
 }
 
-export function BudgetActualCharts({ monthlyPL, budgets, viewMode }: ChartsProps) {
-  const { buckets } = useMemo(() => buildBuckets(monthlyPL, budgets, viewMode), [monthlyPL, budgets, viewMode])
+export function BudgetActualCharts({ monthlyPL, viewMode }: ChartsProps) {
+  const { buckets } = useMemo(() => buildBuckets(monthlyPL, viewMode), [monthlyPL, viewMode])
 
   const chartData = buckets.map(r => ({
     label: r.label,
     売上予算: r.budgetRevenue,
     売上実績: r.actualRevenue,
-    粗利予算: r.budgetGross,
-    粗利実績: r.actualGross,
   }))
 
   return (
-    <>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">売上 予実</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="h-[280px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-45} textAnchor="end" height={90} interval={0} />
-                <YAxis tickFormatter={formatYAxis} tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(value) => [`¥${Number(value).toLocaleString('ja-JP')}`, undefined]} />
-                <Legend />
-                <ReferenceLine y={0} stroke="#666" />
-                <Bar dataKey="売上予算" fill="#93C5FD" radius={[2, 2, 0, 0]} />
-                <Bar dataKey="売上実績" fill="#2563EB" radius={[2, 2, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">粗利 予実</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="h-[280px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-45} textAnchor="end" height={90} interval={0} />
-                <YAxis tickFormatter={formatYAxis} tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(value) => [`¥${Number(value).toLocaleString('ja-JP')}`, undefined]} />
-                <Legend />
-                <ReferenceLine y={0} stroke="#666" />
-                <Bar dataKey="粗利予算" fill="#86EFAC" radius={[2, 2, 0, 0]} />
-                <Bar dataKey="粗利実績" fill="#16A34A" radius={[2, 2, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
-    </>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">売上 予実</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="h-[280px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} angle={-45} textAnchor="end" height={90} interval={0} />
+              <YAxis tickFormatter={formatYAxis} tick={{ fontSize: 11 }} />
+              <Tooltip formatter={(value) => [`¥${Number(value).toLocaleString('ja-JP')}`, undefined]} />
+              <Legend />
+              <ReferenceLine y={0} stroke="#666" />
+              <Bar dataKey="売上予算" fill="#93C5FD" radius={[2, 2, 0, 0]} />
+              <Bar dataKey="売上実績" fill="#2563EB" radius={[2, 2, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
 // =====================================================
-// 子コンポーネント: 予実表（タブを保持・切替）
+// 予実表（§15-7: 粗利関連の 3 行は省略）
 // =====================================================
-interface TableProps extends Props {
+interface TableProps {
+  monthlyPL: MonthlyPL[]
   viewMode: ViewMode
   setViewMode: (m: ViewMode) => void
 }
 
-export function BudgetActualTable({ monthlyPL, budgets, viewMode, setViewMode }: TableProps) {
+export function BudgetActualTable({ monthlyPL, viewMode, setViewMode }: TableProps) {
   const { buckets, fiscalYears, fiscalSums } = useMemo(
-    () => buildBuckets(monthlyPL, budgets, viewMode),
-    [monthlyPL, budgets, viewMode]
+    () => buildBuckets(monthlyPL, viewMode),
+    [monthlyPL, viewMode]
   )
 
   return (
@@ -348,7 +290,7 @@ export function BudgetActualTable({ monthlyPL, budgets, viewMode, setViewMode }:
                 </TableCell>
               ))}
             </TableRow>
-            <TableRow className="border-b-2">
+            <TableRow>
               <TableCell className="sticky left-0 z-10 bg-white text-sm pl-6 text-gray-600">売上達成率</TableCell>
               {buckets.map(r => (
                 <TableCell key={r.key} className={`text-right text-sm tabular-nums ${ratioColor(r.actualRevenue, r.budgetRevenue)}`}>
@@ -358,45 +300,6 @@ export function BudgetActualTable({ monthlyPL, budgets, viewMode, setViewMode }:
               {fiscalYears.map(fy => (
                 <TableCell key={`fy-${fy}`} className={`text-right text-sm tabular-nums bg-blue-50 ${ratioColor(fiscalSums[fy].actualRevenue, fiscalSums[fy].budgetRevenue)}`}>
                   {formatPercent(fiscalSums[fy].actualRevenue, fiscalSums[fy].budgetRevenue)}
-                </TableCell>
-              ))}
-            </TableRow>
-            <TableRow>
-              <TableCell className="sticky left-0 z-10 bg-white text-sm pl-6 text-green-700 font-medium">粗利予算</TableCell>
-              {buckets.map(r => (
-                <TableCell key={r.key} className="text-right text-sm tabular-nums">
-                  {r.budgetGross === 0 ? '—' : formatCurrency(r.budgetGross)}
-                </TableCell>
-              ))}
-              {fiscalYears.map(fy => (
-                <TableCell key={`fy-${fy}`} className="text-right text-sm tabular-nums font-bold bg-blue-50">
-                  {formatCurrency(fiscalSums[fy].budgetGross)}
-                </TableCell>
-              ))}
-            </TableRow>
-            <TableRow>
-              <TableCell className="sticky left-0 z-10 bg-white text-sm pl-6 text-green-900 font-medium">粗利実績</TableCell>
-              {buckets.map(r => (
-                <TableCell key={r.key} className="text-right text-sm tabular-nums">
-                  {r.actualGross === 0 ? '—' : formatCurrency(r.actualGross)}
-                </TableCell>
-              ))}
-              {fiscalYears.map(fy => (
-                <TableCell key={`fy-${fy}`} className="text-right text-sm tabular-nums font-bold bg-blue-50">
-                  {formatCurrency(fiscalSums[fy].actualGross)}
-                </TableCell>
-              ))}
-            </TableRow>
-            <TableRow>
-              <TableCell className="sticky left-0 z-10 bg-white text-sm pl-6 text-gray-600">粗利達成率</TableCell>
-              {buckets.map(r => (
-                <TableCell key={r.key} className={`text-right text-sm tabular-nums ${ratioColor(r.actualGross, r.budgetGross)}`}>
-                  {formatPercent(r.actualGross, r.budgetGross)}
-                </TableCell>
-              ))}
-              {fiscalYears.map(fy => (
-                <TableCell key={`fy-${fy}`} className={`text-right text-sm tabular-nums bg-blue-50 ${ratioColor(fiscalSums[fy].actualGross, fiscalSums[fy].budgetGross)}`}>
-                  {formatPercent(fiscalSums[fy].actualGross, fiscalSums[fy].budgetGross)}
                 </TableCell>
               ))}
             </TableRow>

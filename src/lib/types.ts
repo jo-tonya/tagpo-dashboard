@@ -23,6 +23,12 @@ export type CampaignCertainty =
   | 'D.見込み+'
   | 'E.見込み-'
 
+// 案件種別（§15-3 で追加。DB は campaign_category_t ENUM）
+export type CampaignCategory = 'Tagpo' | 'POSCO' | 'インフルエンサー' | 'その他'
+export const CAMPAIGN_CATEGORIES: readonly CampaignCategory[] = [
+  'Tagpo', 'POSCO', 'インフルエンサー', 'その他',
+] as const
+
 // Campaign = 旧 Project + 旧 campaigns を統合
 export interface Campaign {
   id: number  // campaigns テーブルは INTEGER（UUID ではない）
@@ -48,6 +54,9 @@ export interface Campaign {
   // §12-4: 案件ボードの追加メモ項目
   creative_notes: string  // クリエイティブの追加指示
   schedule_notes: string  // スケジュール、進行の注意点
+  // §15-1/2: 請求先（自由入力）と案件種別
+  billing_to: string | null
+  category: CampaignCategory | null
   // PL連携用（新規追加カラム）
   billing_amount: number | null
   retail_margin: number | null
@@ -182,16 +191,16 @@ export interface MonthlyBudget {
 }
 
 // MonthlyPL — ビューから取得
-// 「売上 = budget」モデル v6:
+// v7 モデル: §15-6 で budget（campaigns.budget の月別合計）を追加
+//   revenue = campaigns.billing_amount の月別合計（売上）
+//   budget  = campaigns.budget の月別合計（案件予算）
 //   原価6項目（review/user_reward/product/subcontract/ad_delivery/misc）+ cogs_total
-//     ※ review_cost は §11→§12-5 で EG ページ「審査（実費入力）」のみに変更
-//     ※ product_cost は §12-1 で復活
 //   販管費3項目（eg_admin/agency_fee/personnel）+ sga_total
-//     ※ eg_admin_cost は §11→§12-5 で復活（EG 管理費を独立行に分離）
-//   e_guardian_cost は審査費＋管理費の合計（補足表示用、互換のため残置）
+//   e_guardian_cost は EG 審査費＋管理費の合計（補足表示用、互換のため残置）
 export interface MonthlyPL {
   month: string
-  revenue: number
+  revenue: number    // 案件売上 = SUM(billing_amount)
+  budget: number     // §15-6 新規: 案件予算 = SUM(campaigns.budget)
   // 原価（COGS, 6 項目）
   review_cost: number
   user_reward_cost: number
@@ -217,7 +226,8 @@ export interface RevenueDetail {
   month: string
   campaign_id: number
   display_name: string
-  billing_amount: number
+  billing_amount: number  // 売上（v7: campaigns.billing_amount をそのまま）
+  budget: number          // §15-6 新規: 案件予算（campaigns.budget）
   status: string
   certainty: string
 }

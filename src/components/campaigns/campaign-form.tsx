@@ -2,8 +2,8 @@
 
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { Campaign, CampaignSubcontract, campaignDisplayName } from '@/lib/types'
-import { calcGuaranteedViews, calcRequiredViews, calcTargetPosts, calcCampaignProfit, formatCurrency, formatPercent, formatNumber } from '@/lib/calculations'
+import { Campaign, CampaignSubcontract, CampaignCategory, CAMPAIGN_CATEGORIES, campaignDisplayName } from '@/lib/types'
+import { calcGuaranteedViews, calcRequiredViews, calcTargetPosts, calcCampaignProfit, calcRevenue, formatCurrency, formatPercent, formatNumber } from '@/lib/calculations'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,6 +11,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { NumericInput } from '@/components/ui/numeric-input'
 import { Save, ArrowLeft, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -57,6 +58,8 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
     status: campaign?.status || '未確定',
     certainty: campaign?.certainty || 'D.見込み+',
     type: campaign?.type || '既存',
+    category: (campaign?.category as CampaignCategory) || 'Tagpo',
+    billing_to: campaign?.billing_to || '',
     review: campaign?.review || '',
     url: campaign?.url || '',
     influencers: campaign?.influencers || '',
@@ -102,10 +105,29 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
       : []
   )
 
+  // §15-3-3: 売上（請求金額）の独立フィールド
+  //   billingAmountManual を初期値として campaign.billing_amount から取り、
+  //   ユーザーが触ったら手動値を尊重、未タッチ＆未設定なら自動計算
+  const [billingAmountManual, setBillingAmountManual] = useState<number | null>(
+    campaign?.billing_amount ?? null
+  )
+  const [billingAmountTouched, setBillingAmountTouched] = useState(false)
+
   // === Auto calculations (v3: 売上=予算モデル) ===
   const budget = parseFloat(form.budget) || 0
   const unitPrice = parseFloat(form.unit_price) || 0
   const avgViews = parseFloat(form.avg_views) || 0
+
+  // §15-3-3: 売上の自動計算値 = budget × (1 - retailMargin - agencyMargin)
+  //   マージン未入力＝0扱い → 売上 = 予算
+  const retailMarginPct = parseFloat(form.retail_margin) || 0
+  const agencyMarginPct = parseFloat(form.agency_margin) || 0
+  const billingAmountAuto = budget > 0
+    ? Math.round(calcRevenue(budget, retailMarginPct / 100, agencyMarginPct / 100))
+    : null
+  const billingAmountDisplay: number | null = billingAmountTouched
+    ? billingAmountManual
+    : (billingAmountManual ?? billingAmountAuto)
 
   const requiredViews = useMemo(() => budget > 0 && unitPrice > 0 ? calcRequiredViews(budget, unitPrice) : 0, [budget, unitPrice])
   const targetPosts = useMemo(() => requiredViews > 0 && avgViews > 0 ? calcTargetPosts(requiredViews, avgViews) : 0, [requiredViews, avgViews])
@@ -193,6 +215,8 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
         status: form.status,
         certainty: form.certainty,
         type: form.type,
+        category: form.category,
+        billing_to: form.billing_to.trim() || null,
         review: form.review,
         url: form.url,
         influencers: form.influencers,
@@ -209,8 +233,8 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
         post_end: milestones.post_end || null,
         view_complete: milestones.view_complete || null,
         report_send: milestones.report_send || null,
-        // PL（v4: 売上＝予算モデル。billing_amount は budget をそのまま保存）
-        billing_amount: budget > 0 ? Math.round(budget) : null,
+        // §15-3-3: 売上＝請求金額。手動値があれば手動、無ければ自動計算（マージン控除）
+        billing_amount: billingAmountDisplay,
         retail_margin: form.retail_margin ? parseFloat(form.retail_margin) / 100 : null,
         agency_margin: form.agency_margin ? parseFloat(form.agency_margin) / 100 : null,
         product_unit_price: form.product_unit_price ? parseFloat(form.product_unit_price) : null,
@@ -354,40 +378,63 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
           {/* Section 1: Basic Info */}
           <Card>
             <CardHeader><CardTitle className="text-base">基本情報</CardTitle></CardHeader>
-            <CardContent className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>ステータス</Label>
-                <Select value={form.status} onValueChange={v => v && setForm(p => ({ ...p, status: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+            <CardContent className="space-y-4">
+              {/* §15-3-1: 案件種別タブ（基本情報の先頭） */}
+              <div>
+                <Label className="text-sm font-medium mb-2 block">案件種別</Label>
+                <Tabs value={form.category} onValueChange={v => v && setForm(p => ({ ...p, category: v as CampaignCategory }))}>
+                  <TabsList className="grid grid-cols-4 w-full">
+                    {CAMPAIGN_CATEGORIES.map(c => (
+                      <TabsTrigger key={c} value={c}>{c}</TabsTrigger>
+                    ))}
+                  </TabsList>
+                </Tabs>
               </div>
-              <div className="space-y-2">
-                <Label>メーカー名 *</Label>
-                <Input value={form.maker} onChange={e => setForm(p => ({ ...p, maker: e.target.value }))} placeholder="農心ジャパン" required />
-              </div>
-              <div className="space-y-2">
-                <Label>商品名 *</Label>
-                <Input value={form.product} onChange={e => setForm(p => ({ ...p, product: e.target.value }))} placeholder="辛ラーメン トゥーンバ" required />
-              </div>
-              <div className="space-y-2">
-                <Label>種別</Label>
-                <Select value={form.type} onValueChange={v => v && setForm(p => ({ ...p, type: v }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {TYPE_OPTIONS.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>審査</Label>
-                <Input value={form.review} onChange={e => setForm(p => ({ ...p, review: e.target.value }))} />
-              </div>
-              <div className="space-y-2 col-span-2">
-                <Label>商品URL</Label>
-                <Input value={form.url} onChange={e => setForm(p => ({ ...p, url: e.target.value }))} placeholder="https://..." />
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>ステータス</Label>
+                  <Select value={form.status} onValueChange={v => v && setForm(p => ({ ...p, status: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {STATUS_OPTIONS.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>メーカー名 *</Label>
+                  <Input value={form.maker} onChange={e => setForm(p => ({ ...p, maker: e.target.value }))} placeholder="農心ジャパン" required />
+                </div>
+                <div className="space-y-2">
+                  <Label>商品名 *</Label>
+                  <Input value={form.product} onChange={e => setForm(p => ({ ...p, product: e.target.value }))} placeholder="辛ラーメン トゥーンバ" required />
+                </div>
+                <div className="space-y-2">
+                  <Label>種別</Label>
+                  <Select value={form.type} onValueChange={v => v && setForm(p => ({ ...p, type: v }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {TYPE_OPTIONS.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* §15-3-2: 請求先 */}
+                <div className="space-y-2">
+                  <Label>請求先</Label>
+                  <Input
+                    value={form.billing_to}
+                    onChange={e => setForm(p => ({ ...p, billing_to: e.target.value }))}
+                    placeholder="例：株式会社アドインテ"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>審査</Label>
+                  <Input value={form.review} onChange={e => setForm(p => ({ ...p, review: e.target.value }))} />
+                </div>
+                <div className="space-y-2 col-span-2">
+                  <Label>商品URL</Label>
+                  <Input value={form.url} onChange={e => setForm(p => ({ ...p, url: e.target.value }))} placeholder="https://..." />
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -453,8 +500,21 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
                 <NumericInput value={form.agency_margin} onChange={v => setForm(p => ({ ...p, agency_margin: v }))} />
               </div>
               <div className="space-y-2">
-                <Label>売上（＝予算）</Label>
-                <Input type="text" value={budget > 0 ? formatCurrency(Math.round(budget)) : ''} readOnly className="bg-gray-100" />
+                <Label>売上（請求金額）</Label>
+                <NumericInput
+                  value={billingAmountDisplay != null ? String(billingAmountDisplay) : ''}
+                  onChange={v => {
+                    const num = parseFloat(v)
+                    setBillingAmountManual(isNaN(num) ? null : num)
+                    setBillingAmountTouched(true)
+                  }}
+                  integerOnly
+                  placeholder={billingAmountAuto != null ? String(billingAmountAuto) : ''}
+                />
+                <p className="text-xs text-gray-500 leading-tight">
+                  予算 × (1 − 小売マージン − 代理店マージン) で自動計算。<br />
+                  マージンを入力しない案件は「売上 = 予算」になります。手入力で上書きも可。
+                </p>
                 <p className="text-xs text-orange-600">※ PL に反映させるには「再生完了」日の入力が必要です（再生完了月＝請求月として扱われます）</p>
               </div>
               <div className="space-y-2">

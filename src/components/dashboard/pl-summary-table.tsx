@@ -114,10 +114,13 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
   //     … campaigns.certainty でフィルタ
   //   ・fixed_costs 由来（review = EG審査実費 / eg_admin = EG管理費）と personnel
   //     … 確度を持たないので常に全額計上（view の値そのまま）
+  //   §15-6: budget（案件予算）も同じく案件確度でフィルタして月別集計
   const adjustedData = useMemo(() => {
     const revByMonth: Record<string, number> = {}
+    const budgetByMonth: Record<string, number> = {}
     filteredRevenueDetails.forEach(rd => {
       revByMonth[rd.month] = (revByMonth[rd.month] || 0) + rd.billing_amount
+      budgetByMonth[rd.month] = (budgetByMonth[rd.month] || 0) + (rd.budget || 0)
     })
 
     const sumBySource = (src: CostStatusDetail['source']): Record<string, number> => {
@@ -140,6 +143,7 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
 
     return data.map(d => {
       const revenue = revByMonth[d.month] || 0
+      const budgetTotal = budgetByMonth[d.month] || 0  // §15-6
       const userReward = ur[d.month] || 0
       const productCost = product[d.month] || 0
       const subcontract = sub[d.month] || 0
@@ -157,6 +161,7 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
       return {
         ...d,
         revenue,
+        budget: budgetTotal,
         review_cost: reviewCost,
         user_reward_cost: userReward,
         product_cost: productCost,
@@ -356,8 +361,9 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
       dataRows.push(cells)
     }
 
-    // 売上
-    pushRow('案件収益', d => d.revenue)
+    // 売上（§15-6: 案件予算→案件売上 の 2 行）
+    pushRow('案件予算', d => d.budget)
+    pushRow('案件売上', d => d.revenue)
     // 原価
     pushRow('審査費', d => d.review_cost)
     pushRow('ユーザー報酬', d => d.user_reward_cost)
@@ -465,6 +471,25 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
               <TableCell className="bg-blue-50" />
             </TableRow>
 
+            {/* §15-6: 案件予算（campaigns.budget の月別合計） */}
+            <TableRow>
+              <TableCell className="sticky left-0 z-10 bg-white text-sm pl-6 text-gray-600">
+                案件予算
+              </TableCell>
+              {adjustedData.map(d => (
+                <TableCell key={d.month} className="text-right text-sm tabular-nums text-gray-600">
+                  {d.budget === 0 ? '—' : formatCurrency(d.budget)}
+                </TableCell>
+              ))}
+              <TableCell className="text-right text-sm tabular-nums bg-blue-50 text-gray-600">
+                {formatCurrency(sumByKey(data2025, 'budget'))}
+              </TableCell>
+              <TableCell className="text-right text-sm tabular-nums bg-blue-50 text-gray-600">
+                {formatCurrency(sumByKey(data2026, 'budget'))}
+              </TableCell>
+            </TableRow>
+
+            {/* 案件売上（billing_amount, expandable で案件別内訳） */}
             <TableRow
               className="cursor-pointer hover:bg-gray-100 transition-all duration-200"
               onClick={() => toggleExpand('revenue')}
@@ -474,7 +499,7 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
                   {isRevenueExpanded
                     ? <ChevronDown className="h-4 w-4" />
                     : <ChevronRight className="h-4 w-4" />}
-                  案件収益
+                  案件売上
                 </span>
               </TableCell>
               {adjustedData.map(d => (

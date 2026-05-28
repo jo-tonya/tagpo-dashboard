@@ -30,6 +30,7 @@ export async function getMonthlyPL(): Promise<MonthlyPL[]> {
   return (data || []).map((row: Record<string, unknown>) => ({
     month: row.month as string,
     revenue: Number(row.revenue) || 0,
+    budget: Number(row.budget) || 0,
     review_cost: Number(row.review_cost) || 0,
     user_reward_cost: Number(row.user_reward_cost) || 0,
     product_cost: Number(row.product_cost) || 0,
@@ -62,6 +63,7 @@ export async function getRevenueDetails(): Promise<RevenueDetail[]> {
     campaign_id: row.campaign_id as number,
     display_name: row.display_name as string,
     billing_amount: Number(row.billing_amount) || 0,
+    budget: Number(row.budget) || 0,
     status: (row.status as string) || '',
     certainty: (row.certainty as string) || '未確定',
   }))
