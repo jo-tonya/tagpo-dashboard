@@ -45,6 +45,7 @@ interface SubcontractEntry {
   delegated_amount: string
   delegated_revenue: string
   notes: string
+  billing_month: string  // §16: 'YYYY-MM' 形式（input type=month）。保存時に '-01' を補完
 }
 
 export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDeliveryAmount, initialMiscAmount, mode }: CampaignFormProps) {
@@ -101,6 +102,7 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
           delegated_amount: s.delegated_amount.toString(),
           delegated_revenue: s.delegated_revenue.toString(),
           notes: s.notes || '',
+          billing_month: s.billing_month ? s.billing_month.slice(0, 7) : '',
         }))
       : []
   )
@@ -189,6 +191,8 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
       delegated_amount: '',
       delegated_revenue: '',
       notes: '',
+      // §16: 案件の再生完了月をデフォルトに（未設定なら空）
+      billing_month: campaign?.view_complete ? campaign.view_complete.slice(0, 7) : milestones.view_complete.slice(0, 7),
     }])
   }
 
@@ -249,6 +253,8 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
           delegated_amount: parseFloat(s.delegated_amount) || 0,
           delegated_revenue: parseFloat(s.delegated_revenue) || 0,
           notes: s.notes || null,
+          // §16: 'YYYY-MM' → 'YYYY-MM-01'。未指定なら null（保存側で view_complete fallback）
+          billing_month: s.billing_month ? `${s.billing_month}-01` : null,
         })),
       }
 
@@ -604,7 +610,7 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
                       <Trash2 className="h-4 w-4 text-red-500" />
                     </Button>
                   </div>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                     <div className="space-y-1 col-span-2">
                       <Label className="text-xs">企業名</Label>
                       <Input value={sub.company_name} onChange={e => updateSub(idx, 'company_name', e.target.value)} placeholder="YMS等" />
@@ -617,7 +623,17 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
                       <Label className="text-xs">委託分売上</Label>
                       <Input type="number" value={sub.delegated_revenue} onChange={e => updateSub(idx, 'delegated_revenue', e.target.value)} />
                     </div>
-                    <div className="space-y-1 col-span-2 md:col-span-4">
+                    {/* §16: 外注先ごとの請求月 */}
+                    <div className="space-y-1">
+                      <Label className="text-xs">請求月</Label>
+                      <Input
+                        type="month"
+                        value={sub.billing_month}
+                        onChange={e => updateSub(idx, 'billing_month', e.target.value)}
+                      />
+                      <p className="text-[10px] text-gray-500">未指定なら案件の再生完了月を使用</p>
+                    </div>
+                    <div className="space-y-1 col-span-2 md:col-span-5">
                       <Label className="text-xs">備考</Label>
                       <Input value={sub.notes} onChange={e => updateSub(idx, 'notes', e.target.value)} />
                     </div>

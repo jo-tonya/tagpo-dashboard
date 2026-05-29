@@ -92,6 +92,7 @@ export interface CampaignSubcontract {
   delegated_amount: number
   delegated_revenue: number
   notes: string | null
+  billing_month: string | null  // §16: 外注先ごとの請求月（'YYYY-MM-DD'、月初）
 }
 
 // CampaignCost（旧 ProjectCost）

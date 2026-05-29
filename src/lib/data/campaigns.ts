@@ -127,16 +127,20 @@ export async function createCampaign(
     const rows = subcontracts.map(s => ({ ...s, campaign_id: campaign.id }))
     await supabase.from('campaign_subcontracts').insert(rows)
 
-    // campaign_costs にも連動（再生完了月を target_month とする）
-    const billingMonth = getBillingMonth(campaign)
+    // campaign_costs にも連動
+    // §16: sub.billing_month があれば優先、無ければ案件の再生完了月を fallback
+    const fallbackMonth = getBillingMonth(campaign)
     for (const sub of subcontracts) {
-      if (sub.delegated_amount > 0 && billingMonth) {
+      const targetMonth = sub.billing_month
+        ? `${sub.billing_month.slice(0, 7)}-01`
+        : fallbackMonth
+      if (sub.delegated_amount > 0 && targetMonth) {
         await supabase.from('campaign_costs').insert({
           campaign_id: campaign.id,
           cost_type: `subcontract_${sub.sort_order}`,
           cost_label: `${sub.company_name} 支払額`,
           amount: sub.delegated_amount,
-          target_month: billingMonth,
+          target_month: targetMonth,
         })
       }
     }
@@ -173,18 +177,20 @@ export async function updateCampaign(
       const rows = subcontracts.map(s => ({ ...s, campaign_id: id }))
       await supabase.from('campaign_subcontracts').insert(rows)
 
+      // §16: sub.billing_month 優先、未指定なら案件の再生完了月を fallback
+      const fallbackMonth = getBillingMonth(campaign) || getBillingMonth(cleanData as Campaign)
       for (const sub of subcontracts) {
-        if (sub.delegated_amount > 0) {
-          const targetMonth = getBillingMonth(campaign) || getBillingMonth(cleanData as Campaign)
-          if (targetMonth) {
-            await supabase.from('campaign_costs').insert({
-              campaign_id: id,
-              cost_type: `subcontract_${sub.sort_order}`,
-              cost_label: `${sub.company_name} 支払額`,
-              amount: sub.delegated_amount,
-              target_month: targetMonth,
-            })
-          }
+        const targetMonth = sub.billing_month
+          ? `${sub.billing_month.slice(0, 7)}-01`
+          : fallbackMonth
+        if (sub.delegated_amount > 0 && targetMonth) {
+          await supabase.from('campaign_costs').insert({
+            campaign_id: id,
+            cost_type: `subcontract_${sub.sort_order}`,
+            cost_label: `${sub.company_name} 支払額`,
+            amount: sub.delegated_amount,
+            target_month: targetMonth,
+          })
         }
       }
     }
