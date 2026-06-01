@@ -192,16 +192,26 @@ export interface MonthlyBudget {
 }
 
 // MonthlyPL — ビューから取得
-// v7 モデル: §15-6 で budget（campaigns.budget の月別合計）を追加
-//   revenue = campaigns.billing_amount の月別合計（売上）
-//   budget  = campaigns.budget の月別合計（案件予算）
-//   原価6項目（review/user_reward/product/subcontract/ad_delivery/misc）+ cogs_total
-//   販管費3項目（eg_admin/agency_fee/personnel）+ sga_total
-//   e_guardian_cost は EG 審査費＋管理費の合計（補足表示用、互換のため残置）
+// v9 モデル (§17): マージンを売上控除に分類、販管費から外す
+//   売上構造:
+//     budget                = SUM(campaigns.budget)        — 案件予算
+//     retail_margin_cost    = SUM(budget × retail_margin)  — 小売マージン
+//     agency_margin_cost    = SUM(budget × agency_margin)  — 代理店マージン
+//     margin_total          = retail + agency              — マージン合計（売上控除分）
+//     revenue               = SUM(campaigns.billing_amount) — 売上（= budget − margin_total、手動上書きあり）
+//   原価6項目（マージン含まず）+ cogs_total
+//   販管費2項目（eg_admin/personnel のみ。agency_fee_cost は廃止）+ sga_total
+//   集計:
+//     gross_profit          = revenue − cogs_total
+//     operating_profit      = gross_profit − sga_total
 export interface MonthlyPL {
   month: string
-  revenue: number    // 案件売上 = SUM(billing_amount)
-  budget: number     // §15-6 新規: 案件予算 = SUM(campaigns.budget)
+  // 売上構造
+  budget: number
+  retail_margin_cost: number
+  agency_margin_cost: number
+  margin_total: number
+  revenue: number
   // 原価（COGS, 6 項目）
   review_cost: number
   user_reward_cost: number
@@ -209,17 +219,17 @@ export interface MonthlyPL {
   subcontract_cost: number
   ad_delivery_cost: number
   misc_cost: number
-  // 販管費（SG&A, 3 項目）
-  eg_admin_cost: number
-  agency_fee_cost: number
-  personnel_cost: number
-  // 補足（メイン集計外）— EG 審査費＋管理費 合計
-  e_guardian_cost: number
-  // 集計値
   cogs_total: number
+  // 販管費（SG&A, 2 項目。マージンは含めない）
+  eg_admin_cost: number
+  personnel_cost: number
   sga_total: number
-  total_cost: number
+  // 集計
+  gross_profit: number
   operating_profit: number
+  // 互換維持
+  e_guardian_cost: number   // = review_cost + eg_admin_cost（補足表示用）
+  total_cost: number        // = cogs_total + sga_total（旧呼び元向け）
 }
 
 // ダッシュボード展開用
@@ -227,8 +237,10 @@ export interface RevenueDetail {
   month: string
   campaign_id: number
   display_name: string
-  billing_amount: number  // 売上（v7: campaigns.billing_amount をそのまま）
-  budget: number          // §15-6 新規: 案件予算（campaigns.budget）
+  budget: number              // 案件予算（campaigns.budget）
+  billing_amount: number      // 売上（campaigns.billing_amount）
+  retail_margin_amount: number // §17 新規: 小売マージン金額
+  agency_margin_amount: number // §17 新規: 代理店マージン金額
   status: string
   certainty: string
 }

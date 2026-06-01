@@ -683,33 +683,61 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
           </Card>
         </div>
 
-        {/* Sidebar: 粗利サマリー（営業利益まで段階損益） */}
+        {/* Sidebar: 粗利サマリー（§17: マージン分類修正、粗利が最下位指標） */}
         <div className="space-y-4">
           <Card className="sticky top-20">
             <CardHeader><CardTitle className="text-base">粗利サマリー</CardTitle></CardHeader>
             <CardContent className="space-y-3 text-sm">
-              <div className="flex justify-between font-medium">
-                <span>売上</span>
-                <span className="tabular-nums">{formatCurrency(budget || null)}</span>
-              </div>
-
-              <div className="border-t pt-2 space-y-1">
+              {/* 原価セクション（マージン含まず） */}
+              <div className="space-y-1">
                 <div className="text-xs font-medium text-gray-500">原価</div>
                 <p className="text-[10px] text-gray-400 leading-tight">
                   ※ 審査費は案件単位の試算値。実費はEGページで管理
                 </p>
-                <RowKV label="審査費（試算）" value={profit.reviewCost} />
                 <RowKV label="ユーザー報酬" value={profit.userReward} />
+                <RowKV label="審査費（試算）" value={profit.reviewCost} />
                 <RowKV label="商品代" value={profit.productCost} />
-                <RowKV label="外注代理店フィー" value={profit.subcontract} />
+                <RowKV label="外注費" value={profit.subcontract} />
                 <RowKV label="広告配信費" value={profit.adDelivery} />
                 <RowKV label="その他諸経費" value={profit.misc} />
                 <div className="flex justify-between font-medium border-t pt-1">
                   <span>原価合計</span>
-                  <span className="tabular-nums">{formatCurrency(profit.totalCost || null)}</span>
+                  <span className="tabular-nums">{formatCurrency(profit.cogsTotal || null)}</span>
                 </div>
               </div>
 
+              {/* マージン参考表示（売上控除分・Tagpo 支払いなし） */}
+              <div className="border-t pt-2 space-y-1">
+                <div className="text-xs font-medium text-gray-500">
+                  参考：マージン（売上控除分・Tagpo 支払いなし）
+                </div>
+                <RowKV label={`小売マージン (${form.retail_margin || 0}%)`} value={profit.retailMargin} />
+                <RowKV label={`代理店マージン (${form.agency_margin || 0}%)`} value={profit.agencyMargin} />
+                <div className="flex justify-between font-medium text-gray-600 border-t pt-1">
+                  <span>マージン合計</span>
+                  <span className="tabular-nums">{formatCurrency(profit.marginTotal || null)}</span>
+                </div>
+              </div>
+
+              {/* 売上構造: 予算 − マージン = 売上 */}
+              <div className="border-t pt-2 space-y-1">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">予算</span>
+                  <span className="tabular-nums">{formatCurrency(budget || null)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>− マージン合計</span>
+                  <span className="tabular-nums">
+                    {profit.marginTotal > 0 ? `−${formatCurrency(profit.marginTotal)}` : '—'}
+                  </span>
+                </div>
+                <div className="flex justify-between font-medium border-t pt-1">
+                  <span>= 売上</span>
+                  <span className="tabular-nums">{formatCurrency(profit.revenue || null)}</span>
+                </div>
+              </div>
+
+              {/* 粗利＆利益率 2 種 */}
               <div className="border-t pt-2">
                 <div className="flex justify-between font-bold">
                   <span>粗利</span>
@@ -718,31 +746,12 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
                   </span>
                 </div>
                 <div className="flex justify-between text-xs text-gray-500">
-                  <span>粗利率</span>
-                  <span className="tabular-nums">{budget > 0 ? formatPercent(profit.grossMarginRate) : '—'}</span>
-                </div>
-              </div>
-
-              <div className="border-t pt-2 space-y-1">
-                <div className="text-xs font-medium text-gray-500">販管費（営業代理店フィー）</div>
-                <RowKV label={`小売マージン (${form.retail_margin || 0}%)`} value={profit.retailFee} />
-                <RowKV label={`代理店マージン (${form.agency_margin || 0}%)`} value={profit.agencyFee} />
-                <div className="flex justify-between font-medium border-t pt-1">
-                  <span>販管費合計</span>
-                  <span className="tabular-nums">{formatCurrency(profit.sgaTotal || null)}</span>
-                </div>
-              </div>
-
-              <div className="border-t pt-2">
-                <div className="flex justify-between font-bold">
-                  <span>営業利益</span>
-                  <span className={`tabular-nums ${profit.operatingProfit > 0 ? 'text-green-700' : profit.operatingProfit < 0 ? 'text-red-600' : ''}`}>
-                    {formatCurrency(profit.operatingProfit || null)}
-                  </span>
+                  <span>粗利率（予算比）</span>
+                  <span className="tabular-nums">{budget > 0 ? formatPercent(profit.grossMarginBudget) : '—'}</span>
                 </div>
                 <div className="flex justify-between text-xs text-gray-500">
-                  <span>営業利益率</span>
-                  <span className="tabular-nums">{budget > 0 ? formatPercent(profit.operatingMarginRate) : '—'}</span>
+                  <span>粗利率（売上比）</span>
+                  <span className="tabular-nums">{profit.revenue > 0 ? formatPercent(profit.grossMarginRevenue) : '—'}</span>
                 </div>
               </div>
 

@@ -106,32 +106,37 @@ export function calcUserRewardAmount(
 }
 
 /**
- * 案件粗利サマリーの精緻計算（v6 売上=予算モデル、商品代復活）
+ * 案件粗利サマリーの精緻計算（v9 §17: マージンを売上控除に分類）
  *
- *   売上     = budget
- *   原価     = ① 審査費 + ② ユーザー報酬 + ③ 商品代 + ④ 外注代理店フィー + ⑤ 広告配信費 + ⑥ その他諸経費
- *   粗利     = 売上 - 原価合計
- *   販管費   = 小売マージン額 + 代理店マージン額（営業代理店フィー）
- *   営業利益 = 粗利 - 販管費
+ *   売上    = budget − margin_total（マージン控除後）
+ *   原価合計 = 審査費 + ユーザー報酬 + 商品代 + 外注代理店フィー + 広告配信費 + その他諸経費
+ *   粗利     = 売上 − 原価合計
+ *   ※ 案件単位では販管費が無いので「粗利」が最下位指標。営業利益は PL（全社単位）でのみ算出。
  *
- *   ① 審査費       = postersCount × reviewUnitPrice（デフォ単価 1000）
- *      ※ postersCount が null/0 のときは null（粗利サマリーで「—」表示、DB にも書き込まない）
- *   ② ユーザー報酬 = manualUserReward があればそれ、無ければ requiredViews × userRewardUnitPrice（デフォ 0.4）
- *   ③ 商品代       = postersCount × productUnitPrice（postersCount が null/0 のときは null）
- *   ④ 外注代理店フィー = subcontractFee（Σ delegated_amount）
- *   ⑤ 広告配信費   = adDeliveryCost
- *   ⑥ その他諸経費 = miscCost
+ *   マージン（参考表示）: クライアントが予算から控除する分。Tagpo は支払い発生なし。
+ *     retailMargin = budget × retailMargin% / 100
+ *     agencyMargin = budget × agencyMargin% / 100
+ *     marginTotal  = retailMargin + agencyMargin
  *
- *   targetPosts は粗利サマリー下部の参考表示用。
+ *   原価:
+ *     reviewCost / productCost = postersCount × 単価（postersCount 空欄なら null）
+ *     userReward               = manual or requiredViews × userRewardUnitPrice
+ *     subcontract              = subcontractFee（Σ delegated_amount）
+ *     adDelivery               = adDeliveryCost
+ *     misc                     = miscCost
+ *
+ *   利益率:
+ *     grossMarginBudget  = grossProfit / budget   （予算比）
+ *     grossMarginRevenue = grossProfit / revenue  （売上比）
  */
 export function calcCampaignProfit(params: {
   budget: number
   unitPrice: number
   avgViews: number
-  postersCount: number | null  // 投稿者数（実投稿数）。null なら審査費・商品代は null
+  postersCount: number | null
   retailMargin: number          // %
   agencyMargin: number          // %
-  productUnitPrice: number      // §12-1 復活: 商品単価
+  productUnitPrice: number
   reviewUnitPrice: number       // デフォルト 1000 を呼び出し側で渡す
   userRewardUnitPrice: number   // デフォルト 0.4 を呼び出し側で渡す
   manualUserReward: number | null
@@ -142,11 +147,9 @@ export function calcCampaignProfit(params: {
   const requiredViews = calcRequiredViews(params.budget, params.unitPrice)
   const targetPosts = calcTargetPosts(requiredViews, params.avgViews)
 
-  // 審査費は投稿者数ベース。null/0 なら null（DB にも書かない方針）
   const reviewCost: number | null = params.postersCount != null && params.postersCount > 0
     ? Math.round(params.postersCount * params.reviewUnitPrice)
     : null
-  // 商品代も投稿者数ベース
   const productCost: number | null = params.postersCount != null && params.postersCount > 0 && params.productUnitPrice > 0
     ? Math.round(params.postersCount * params.productUnitPrice)
     : null
@@ -156,24 +159,34 @@ export function calcCampaignProfit(params: {
   const subcontract = params.subcontractFee
   const adDelivery = params.adDeliveryCost
   const misc = params.miscCost
-  const totalCost = (reviewCost ?? 0) + userReward + (productCost ?? 0) + subcontract + adDelivery + misc
 
-  const grossProfit = params.budget - totalCost
-  const grossMarginRate = params.budget > 0 ? grossProfit / params.budget : 0
+  // §17: 原価合計はマージンを含めない
+  const cogsTotal = (reviewCost ?? 0) + userReward + (productCost ?? 0) + subcontract + adDelivery + misc
 
-  const retailFee = Math.round(params.budget * (params.retailMargin / 100))
-  const agencyFee = Math.round(params.budget * (params.agencyMargin / 100))
-  const sgaTotal = retailFee + agencyFee
+  // §17: マージンは「売上控除」項目（参考表示のみ。原価合計には含めない）
+  const retailMargin = Math.round(params.budget * (params.retailMargin / 100))
+  const agencyMargin = Math.round(params.budget * (params.agencyMargin / 100))
+  const marginTotal = retailMargin + agencyMargin
 
-  const operatingProfit = grossProfit - sgaTotal
-  const operatingMarginRate = params.budget > 0 ? operatingProfit / params.budget : 0
+  // §17: 売上 = 予算 − マージン合計
+  const revenue = Math.max(0, params.budget - marginTotal)
+
+  // §17: 粗利 = 売上 − 原価合計
+  const grossProfit = revenue - cogsTotal
+  const grossMarginBudget  = params.budget > 0 ? grossProfit / params.budget  : 0
+  const grossMarginRevenue = revenue       > 0 ? grossProfit / revenue        : 0
 
   return {
     requiredViews, targetPosts,
-    reviewCost, userReward, productCost, subcontract, adDelivery, misc, totalCost,
-    grossProfit, grossMarginRate,
-    retailFee, agencyFee, sgaTotal,
-    operatingProfit, operatingMarginRate,
+    reviewCost, userReward, productCost,
+    subcontract, adDelivery, misc,
+    cogsTotal,
+    retailMargin, agencyMargin, marginTotal,
+    revenue,
+    grossProfit,
+    grossMarginBudget, grossMarginRevenue,
+    // 互換維持（旧呼び元向け）
+    totalCost: cogsTotal,
   }
 }
 

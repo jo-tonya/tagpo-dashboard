@@ -11,7 +11,7 @@ export interface CostStatusDetail {
     | 'eg_admin'       // §12-5: EG ページの「管理費」
     | 'product'        // §12-1 復活: 商品代（campaign_costs cost_type='product_cost'）
     | 'misc'
-    | 'agency_fee'     // budget × (retail_margin + agency_margin) — campaigns.certainty で確定/見込み振り分け
+  // §17 で 'agency_fee' は廃止（マージンは販管費ではなく売上控除側に移動）
   target_month: string
   amount: number
   status: string
@@ -29,22 +29,30 @@ export async function getMonthlyPL(): Promise<MonthlyPL[]> {
   }
   return (data || []).map((row: Record<string, unknown>) => ({
     month: row.month as string,
-    revenue: Number(row.revenue) || 0,
+    // 売上構造
     budget: Number(row.budget) || 0,
+    retail_margin_cost: Number(row.retail_margin_cost) || 0,
+    agency_margin_cost: Number(row.agency_margin_cost) || 0,
+    margin_total: Number(row.margin_total) || 0,
+    revenue: Number(row.revenue) || 0,
+    // 原価
     review_cost: Number(row.review_cost) || 0,
     user_reward_cost: Number(row.user_reward_cost) || 0,
     product_cost: Number(row.product_cost) || 0,
     subcontract_cost: Number(row.subcontract_cost) || 0,
     ad_delivery_cost: Number(row.ad_delivery_cost) || 0,
     misc_cost: Number(row.misc_cost) || 0,
-    eg_admin_cost: Number(row.eg_admin_cost) || 0,
-    agency_fee_cost: Number(row.agency_fee_cost) || 0,
-    personnel_cost: Number(row.personnel_cost) || 0,
-    e_guardian_cost: Number(row.e_guardian_cost) || 0,
     cogs_total: Number(row.cogs_total) || 0,
+    // 販管費
+    eg_admin_cost: Number(row.eg_admin_cost) || 0,
+    personnel_cost: Number(row.personnel_cost) || 0,
     sga_total: Number(row.sga_total) || 0,
-    total_cost: Number(row.total_cost) || 0,
+    // 集計
+    gross_profit: Number(row.gross_profit) || 0,
     operating_profit: Number(row.operating_profit) || 0,
+    // 互換
+    e_guardian_cost: Number(row.e_guardian_cost) || 0,
+    total_cost: Number(row.total_cost) || 0,
   }))
 }
 
@@ -62,8 +70,10 @@ export async function getRevenueDetails(): Promise<RevenueDetail[]> {
     month: row.month as string,
     campaign_id: row.campaign_id as number,
     display_name: row.display_name as string,
-    billing_amount: Number(row.billing_amount) || 0,
     budget: Number(row.budget) || 0,
+    billing_amount: Number(row.billing_amount) || 0,
+    retail_margin_amount: Number(row.retail_margin_amount) || 0,
+    agency_margin_amount: Number(row.agency_margin_amount) || 0,
     status: (row.status as string) || '',
     certainty: (row.certainty as string) || '未確定',
   }))
@@ -169,27 +179,11 @@ export async function getCostStatusDetails(): Promise<CostStatusDetail[]> {
     }
   }
 
-  // 営業代理店フィー = campaigns.budget × (retail_margin + agency_margin)
-  // campaigns.certainty で 確定/見込み を振り分ける（販管費なので personnel と同じ扱い）
-  const { data: agencyData } = await supabase
-    .from('campaigns')
-    .select('view_complete, budget, retail_margin, agency_margin, certainty')
-    .not('view_complete', 'is', null)
-    .not('budget', 'is', null)
-    .gt('budget', 0)
-
-  for (const c of agencyData || []) {
-    const vc = c.view_complete as string | null
-    if (!vc) continue
-    const fee = (Number(c.budget) || 0) * ((Number(c.retail_margin) || 0) + (Number(c.agency_margin) || 0))
-    if (fee <= 0) continue
-    results.push({
-      source: 'agency_fee',
-      target_month: `${vc.slice(0, 7)}-01`,
-      amount: fee,
-      status: c.certainty || '未確定',
-    })
-  }
+  // §17: マージン（旧 agency_fee_cost）は販管費から外して売上構造に統合済み。
+  //       monthly_pl_view が retail_margin_cost / agency_margin_cost を返すので、
+  //       monthly_revenue_detail 側の retail_margin_amount / agency_margin_amount を
+  //       案件確度で再集計するだけ（pl-summary-table 側で実施）。
+  //       ここでは agency_fee の二重フェッチを削除。
 
   return results
 }

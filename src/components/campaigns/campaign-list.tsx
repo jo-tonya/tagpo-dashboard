@@ -280,7 +280,7 @@ export function CampaignList({ campaigns, costMaps }: CampaignListProps) {
                 adDeliveryCost,
                 miscCost,
               })
-              const totalCost = (campaign.budget ?? 0) > 0 ? profit.totalCost : null
+              const totalCost = (campaign.budget ?? 0) > 0 ? profit.cogsTotal : null
               const grossProfit = (campaign.budget ?? 0) > 0 ? profit.grossProfit : null
               const profitClass =
                 grossProfit == null ? 'text-gray-400' :

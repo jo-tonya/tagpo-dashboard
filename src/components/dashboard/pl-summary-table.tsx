@@ -51,11 +51,10 @@ const COGS_ROWS: CostRow[] = [
   { key: 'misc_cost',        label: 'その他諸経費',  plKey: 'misc_cost',        expandable: true, costTypes: ['misc'] },
 ]
 
-// 販管費（SG&A, 非案件コスト）— 3項目（§12-5 で EG管理費を再分離）
+// 販管費（SG&A, 非案件コスト）— 2項目（§17: 営業代理店フィーは売上控除側に移動）
 const SGA_ROWS: CostRow[] = [
-  { key: 'eg_admin_cost',   label: 'EG管理費',                          plKey: 'eg_admin_cost',   expandable: false },
-  { key: 'agency_fee_cost', label: '営業代理店フィー',                    plKey: 'agency_fee_cost', expandable: false },
-  { key: 'personnel_cost',  label: 'アルバイト・イベント・インターン',     plKey: 'personnel_cost',  expandable: false },
+  { key: 'eg_admin_cost',  label: 'EG管理費',                          plKey: 'eg_admin_cost',  expandable: false },
+  { key: 'personnel_cost', label: 'アルバイト・イベント・インターン',     plKey: 'personnel_cost', expandable: false },
 ]
 
 // §14: 確度 5 値マルチセレクト
@@ -109,18 +108,23 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
     return revenueDetails.filter(rd => matchesFilter(rd.certainty))
   }, [revenueDetails, matchesFilter])
 
-  // §14: 確度フィルタを反映して再集計。
-  //   ・案件由来コスト（user_reward / product / subcontract / ad_delivery / misc / agency_fee）
-  //     … campaigns.certainty でフィルタ
+  // §17: 確度フィルタを反映して再集計。
+  //   ・売上構造（budget / 小売M / 代理店M / margin_total / revenue）
+  //     … filteredRevenueDetails から月別合計
+  //   ・案件由来コスト（user_reward / product / subcontract / ad_delivery / misc）
+  //     … campaigns.certainty でフィルタ（costStatusDetails 経由）
   //   ・fixed_costs 由来（review = EG審査実費 / eg_admin = EG管理費）と personnel
   //     … 確度を持たないので常に全額計上（view の値そのまま）
-  //   §15-6: budget（案件予算）も同じく案件確度でフィルタして月別集計
   const adjustedData = useMemo(() => {
     const revByMonth: Record<string, number> = {}
     const budgetByMonth: Record<string, number> = {}
+    const retailMarginByMonth: Record<string, number> = {}
+    const agencyMarginByMonth: Record<string, number> = {}
     filteredRevenueDetails.forEach(rd => {
       revByMonth[rd.month] = (revByMonth[rd.month] || 0) + rd.billing_amount
       budgetByMonth[rd.month] = (budgetByMonth[rd.month] || 0) + (rd.budget || 0)
+      retailMarginByMonth[rd.month] = (retailMarginByMonth[rd.month] || 0) + (rd.retail_margin_amount || 0)
+      agencyMarginByMonth[rd.month] = (agencyMarginByMonth[rd.month] || 0) + (rd.agency_margin_amount || 0)
     })
 
     const sumBySource = (src: CostStatusDetail['source']): Record<string, number> => {
@@ -139,43 +143,52 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
     const sub = sumBySource('subcontract')
     const ad = sumBySource('ad_delivery')
     const misc = sumBySource('misc')
-    const agency = sumBySource('agency_fee')
 
     return data.map(d => {
+      // 売上構造
+      const budgetTotal = budgetByMonth[d.month] || 0
+      const retailMargin = retailMarginByMonth[d.month] || 0
+      const agencyMargin = agencyMarginByMonth[d.month] || 0
+      const marginTotal = retailMargin + agencyMargin
       const revenue = revByMonth[d.month] || 0
-      const budgetTotal = budgetByMonth[d.month] || 0  // §15-6
+      // 案件由来原価
       const userReward = ur[d.month] || 0
       const productCost = product[d.month] || 0
       const subcontract = sub[d.month] || 0
       const adDelivery = ad[d.month] || 0
       const miscCost = misc[d.month] || 0
-      const agencyFee = agency[d.month] || 0
-      // フィルタ非対象（fixed_costs / personnel）は view 値をそのまま使う
+      // フィルタ非対象（fixed_costs / personnel）
       const reviewCost = d.review_cost
       const egAdminCost = d.eg_admin_cost
       const personnelCost = d.personnel_cost
-      const eGuardian = reviewCost + egAdminCost  // 補足: 審査費+管理費 合計
+      const eGuardian = reviewCost + egAdminCost  // 補足
+      // 集計（§17: マージンは原価にも販管費にも含めない）
       const cogsTotal = reviewCost + userReward + productCost + subcontract + adDelivery + miscCost
-      const sgaTotal = egAdminCost + agencyFee + personnelCost
+      const sgaTotal = egAdminCost + personnelCost
+      const grossProfit = revenue - cogsTotal
+      const operatingProfit = grossProfit - sgaTotal
       const totalCost = cogsTotal + sgaTotal
       return {
         ...d,
-        revenue,
         budget: budgetTotal,
+        retail_margin_cost: retailMargin,
+        agency_margin_cost: agencyMargin,
+        margin_total: marginTotal,
+        revenue,
         review_cost: reviewCost,
         user_reward_cost: userReward,
         product_cost: productCost,
         subcontract_cost: subcontract,
         ad_delivery_cost: adDelivery,
         misc_cost: miscCost,
-        eg_admin_cost: egAdminCost,
-        agency_fee_cost: agencyFee,
-        personnel_cost: personnelCost,
-        e_guardian_cost: eGuardian,
         cogs_total: cogsTotal,
+        eg_admin_cost: egAdminCost,
+        personnel_cost: personnelCost,
         sga_total: sgaTotal,
+        gross_profit: grossProfit,
+        operating_profit: operatingProfit,
+        e_guardian_cost: eGuardian,
         total_cost: totalCost,
-        operating_profit: revenue - totalCost,
       }
     })
   }, [data, filteredRevenueDetails, costStatusDetails, matchesFilter])
@@ -310,20 +323,23 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
     )
   }
 
-  // 粗利率（行ごと）
-  const grossMarginByMonth: Record<string, number> = {}
-  for (const d of adjustedData) {
-    grossMarginByMonth[d.month] = d.revenue > 0 ? (d.revenue - d.cogs_total) / d.revenue : 0
+  // §17: 粗利率と営業利益率を「予算比」「売上比」の 2 種類で表示
+  function rateBudget(rows: typeof data2025, key: 'gross_profit' | 'operating_profit'): number {
+    const b = sumByKey(rows, 'budget')
+    return b > 0 ? sumByKey(rows, key) / b : 0
   }
-  const grossMargin2025 = sumByKey(data2025, 'revenue') > 0
-    ? (sumByKey(data2025, 'revenue') - sumByKey(data2025, 'cogs_total')) / sumByKey(data2025, 'revenue') : 0
-  const grossMargin2026 = sumByKey(data2026, 'revenue') > 0
-    ? (sumByKey(data2026, 'revenue') - sumByKey(data2026, 'cogs_total')) / sumByKey(data2026, 'revenue') : 0
-
-  const operatingMargin2025 = sumByKey(data2025, 'revenue') > 0
-    ? sumByKey(data2025, 'operating_profit') / sumByKey(data2025, 'revenue') : 0
-  const operatingMargin2026 = sumByKey(data2026, 'revenue') > 0
-    ? sumByKey(data2026, 'operating_profit') / sumByKey(data2026, 'revenue') : 0
+  function rateRevenue(rows: typeof data2025, key: 'gross_profit' | 'operating_profit'): number {
+    const r = sumByKey(rows, 'revenue')
+    return r > 0 ? sumByKey(rows, key) / r : 0
+  }
+  const grossMarginBudget2025  = rateBudget(data2025, 'gross_profit')
+  const grossMarginBudget2026  = rateBudget(data2026, 'gross_profit')
+  const grossMarginRevenue2025 = rateRevenue(data2025, 'gross_profit')
+  const grossMarginRevenue2026 = rateRevenue(data2026, 'gross_profit')
+  const opMarginBudget2025  = rateBudget(data2025, 'operating_profit')
+  const opMarginBudget2026  = rateBudget(data2026, 'operating_profit')
+  const opMarginRevenue2025 = rateRevenue(data2025, 'operating_profit')
+  const opMarginRevenue2026 = rateRevenue(data2026, 'operating_profit')
 
   // §14: 選択集合をファイル名用ラベルに（A〜E の先頭1文字を連結）
   function certaintyLabel(): string {
@@ -361,38 +377,40 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
       dataRows.push(cells)
     }
 
-    // 売上（§15-6: 案件予算→案件売上 の 2 行）
+    // §17: 売上構造（予算 → マージン → 売上）
     pushRow('案件予算', d => d.budget)
+    pushRow('小売マージン', d => d.retail_margin_cost)
+    pushRow('代理店マージン', d => d.agency_margin_cost)
+    pushRow('マージン合計', d => d.margin_total)
     pushRow('案件売上', d => d.revenue)
     // 原価
-    pushRow('審査費', d => d.review_cost)
     pushRow('ユーザー報酬', d => d.user_reward_cost)
+    pushRow('審査費', d => d.review_cost)
     pushRow('商品代', d => d.product_cost)
     pushRow('外注費', d => d.subcontract_cost)
     pushRow('広告配信費', d => d.ad_delivery_cost)
     pushRow('その他諸経費', d => d.misc_cost)
     pushRow('原価合計', d => d.cogs_total)
-    pushRow('粗利', d => d.revenue - d.cogs_total)
-    pushRate('粗利率',
-      d => d.revenue > 0 ? (d.revenue - d.cogs_total) / d.revenue : 0,
-      rows => {
-        const rev = sumByKey(rows, 'revenue')
-        return rev > 0 ? (rev - sumByKey(rows, 'cogs_total')) / rev : 0
-      })
+    // 粗利
+    pushRow('粗利', d => d.gross_profit)
+    pushRate('粗利率（予算比）',
+      d => d.budget > 0 ? d.gross_profit / d.budget : 0,
+      rows => rateBudget(rows, 'gross_profit'))
+    pushRate('粗利率（売上比）',
+      d => d.revenue > 0 ? d.gross_profit / d.revenue : 0,
+      rows => rateRevenue(rows, 'gross_profit'))
     // 販管費
     pushRow('EG管理費', d => d.eg_admin_cost)
-    pushRow('営業代理店フィー', d => d.agency_fee_cost)
     pushRow('アルバイト・イベント・インターン', d => d.personnel_cost)
     pushRow('販管費合計', d => d.sga_total)
-    // 合計
-    pushRow('コスト合計', d => d.cogs_total + d.sga_total)
+    // 営業利益
     pushRow('営業利益', d => d.operating_profit)
-    pushRate('営業利益率',
+    pushRate('営業利益率（予算比）',
+      d => d.budget > 0 ? d.operating_profit / d.budget : 0,
+      rows => rateBudget(rows, 'operating_profit'))
+    pushRate('営業利益率（売上比）',
       d => d.revenue > 0 ? d.operating_profit / d.revenue : 0,
-      rows => {
-        const rev = sumByKey(rows, 'revenue')
-        return rev > 0 ? sumByKey(rows, 'operating_profit') / rev : 0
-      })
+      rows => rateRevenue(rows, 'operating_profit'))
 
     const csv = rowsToCsv(dataRows)
     const today = new Date().toISOString().slice(0, 10)
@@ -471,21 +489,75 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
               <TableCell className="bg-blue-50" />
             </TableRow>
 
-            {/* §15-6: 案件予算（campaigns.budget の月別合計） */}
+            {/* §17: 案件予算 */}
             <TableRow>
-              <TableCell className="sticky left-0 z-10 bg-white text-sm pl-6 text-gray-600">
+              <TableCell className="sticky left-0 z-10 bg-white text-sm pl-6 text-gray-700 font-medium">
                 案件予算
               </TableCell>
               {adjustedData.map(d => (
-                <TableCell key={d.month} className="text-right text-sm tabular-nums text-gray-600">
+                <TableCell key={d.month} className="text-right text-sm tabular-nums">
                   {d.budget === 0 ? '—' : formatCurrency(d.budget)}
                 </TableCell>
               ))}
-              <TableCell className="text-right text-sm tabular-nums bg-blue-50 text-gray-600">
+              <TableCell className="text-right text-sm tabular-nums bg-blue-50 font-medium">
                 {formatCurrency(sumByKey(data2025, 'budget'))}
               </TableCell>
-              <TableCell className="text-right text-sm tabular-nums bg-blue-50 text-gray-600">
+              <TableCell className="text-right text-sm tabular-nums bg-blue-50 font-medium">
                 {formatCurrency(sumByKey(data2026, 'budget'))}
+              </TableCell>
+            </TableRow>
+
+            {/* §17: 小売マージン（売上控除分） */}
+            <TableRow>
+              <TableCell className="sticky left-0 z-10 bg-white text-sm pl-8 text-gray-500">
+                小売マージン
+              </TableCell>
+              {adjustedData.map(d => (
+                <TableCell key={d.month} className="text-right text-xs tabular-nums text-gray-500">
+                  {d.retail_margin_cost === 0 ? '—' : `−${formatCurrency(d.retail_margin_cost)}`}
+                </TableCell>
+              ))}
+              <TableCell className="text-right text-xs tabular-nums bg-blue-50 text-gray-500">
+                {sumByKey(data2025, 'retail_margin_cost') === 0 ? '—' : `−${formatCurrency(sumByKey(data2025, 'retail_margin_cost'))}`}
+              </TableCell>
+              <TableCell className="text-right text-xs tabular-nums bg-blue-50 text-gray-500">
+                {sumByKey(data2026, 'retail_margin_cost') === 0 ? '—' : `−${formatCurrency(sumByKey(data2026, 'retail_margin_cost'))}`}
+              </TableCell>
+            </TableRow>
+
+            {/* §17: 代理店マージン */}
+            <TableRow>
+              <TableCell className="sticky left-0 z-10 bg-white text-sm pl-8 text-gray-500">
+                代理店マージン
+              </TableCell>
+              {adjustedData.map(d => (
+                <TableCell key={d.month} className="text-right text-xs tabular-nums text-gray-500">
+                  {d.agency_margin_cost === 0 ? '—' : `−${formatCurrency(d.agency_margin_cost)}`}
+                </TableCell>
+              ))}
+              <TableCell className="text-right text-xs tabular-nums bg-blue-50 text-gray-500">
+                {sumByKey(data2025, 'agency_margin_cost') === 0 ? '—' : `−${formatCurrency(sumByKey(data2025, 'agency_margin_cost'))}`}
+              </TableCell>
+              <TableCell className="text-right text-xs tabular-nums bg-blue-50 text-gray-500">
+                {sumByKey(data2026, 'agency_margin_cost') === 0 ? '—' : `−${formatCurrency(sumByKey(data2026, 'agency_margin_cost'))}`}
+              </TableCell>
+            </TableRow>
+
+            {/* §17: マージン合計 */}
+            <TableRow>
+              <TableCell className="sticky left-0 z-10 bg-white text-sm pl-8 text-gray-600 font-medium">
+                マージン合計
+              </TableCell>
+              {adjustedData.map(d => (
+                <TableCell key={d.month} className="text-right text-sm tabular-nums text-gray-600">
+                  {d.margin_total === 0 ? '—' : `−${formatCurrency(d.margin_total)}`}
+                </TableCell>
+              ))}
+              <TableCell className="text-right text-sm tabular-nums bg-blue-50 text-gray-600 font-medium">
+                {sumByKey(data2025, 'margin_total') === 0 ? '—' : `−${formatCurrency(sumByKey(data2025, 'margin_total'))}`}
+              </TableCell>
+              <TableCell className="text-right text-sm tabular-nums bg-blue-50 text-gray-600 font-medium">
+                {sumByKey(data2026, 'margin_total') === 0 ? '—' : `−${formatCurrency(sumByKey(data2026, 'margin_total'))}`}
               </TableCell>
             </TableRow>
 
@@ -583,37 +655,52 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
               <TableCell className="sticky left-0 z-10 bg-white text-sm pl-6 font-medium">
                 粗利
               </TableCell>
-              {adjustedData.map(d => {
-                const gp = d.revenue - d.cogs_total
-                return (
-                  <TableCell key={d.month} className={`text-right text-sm tabular-nums ${profitClass(gp)}`}>
-                    {gp === 0 ? '—' : formatCurrency(gp)}
-                  </TableCell>
-                )
-              })}
-              <TableCell className={`text-right text-sm tabular-nums font-bold bg-blue-50 ${profitClass(sumByKey(data2025, 'revenue') - sumByKey(data2025, 'cogs_total'))}`}>
-                {formatCurrency(sumByKey(data2025, 'revenue') - sumByKey(data2025, 'cogs_total'))}
+              {adjustedData.map(d => (
+                <TableCell key={d.month} className={`text-right text-sm tabular-nums ${profitClass(d.gross_profit)}`}>
+                  {d.gross_profit === 0 ? '—' : formatCurrency(d.gross_profit)}
+                </TableCell>
+              ))}
+              <TableCell className={`text-right text-sm tabular-nums font-bold bg-blue-50 ${profitClass(sumByKey(data2025, 'gross_profit'))}`}>
+                {formatCurrency(sumByKey(data2025, 'gross_profit'))}
               </TableCell>
-              <TableCell className={`text-right text-sm tabular-nums font-bold bg-blue-50 ${profitClass(sumByKey(data2026, 'revenue') - sumByKey(data2026, 'cogs_total'))}`}>
-                {formatCurrency(sumByKey(data2026, 'revenue') - sumByKey(data2026, 'cogs_total'))}
+              <TableCell className={`text-right text-sm tabular-nums font-bold bg-blue-50 ${profitClass(sumByKey(data2026, 'gross_profit'))}`}>
+                {formatCurrency(sumByKey(data2026, 'gross_profit'))}
               </TableCell>
             </TableRow>
 
-            {/* 粗利率 */}
+            {/* 粗利率（予算比） */}
             <TableRow>
               <TableCell className="sticky left-0 z-10 bg-white text-sm pl-6 text-gray-600">
-                粗利率
+                粗利率（予算比）
               </TableCell>
               {adjustedData.map(d => (
                 <TableCell key={d.month} className="text-right text-xs text-gray-600 tabular-nums">
-                  {d.revenue > 0 ? formatPercent(grossMarginByMonth[d.month]) : '—'}
+                  {d.budget > 0 ? formatPercent(d.gross_profit / d.budget) : '—'}
                 </TableCell>
               ))}
               <TableCell className="text-right text-xs text-gray-600 tabular-nums bg-blue-50">
-                {sumByKey(data2025, 'revenue') > 0 ? formatPercent(grossMargin2025) : '—'}
+                {sumByKey(data2025, 'budget') > 0 ? formatPercent(grossMarginBudget2025) : '—'}
               </TableCell>
               <TableCell className="text-right text-xs text-gray-600 tabular-nums bg-blue-50">
-                {sumByKey(data2026, 'revenue') > 0 ? formatPercent(grossMargin2026) : '—'}
+                {sumByKey(data2026, 'budget') > 0 ? formatPercent(grossMarginBudget2026) : '—'}
+              </TableCell>
+            </TableRow>
+
+            {/* 粗利率（売上比） */}
+            <TableRow>
+              <TableCell className="sticky left-0 z-10 bg-white text-sm pl-6 text-gray-600">
+                粗利率（売上比）
+              </TableCell>
+              {adjustedData.map(d => (
+                <TableCell key={d.month} className="text-right text-xs text-gray-600 tabular-nums">
+                  {d.revenue > 0 ? formatPercent(d.gross_profit / d.revenue) : '—'}
+                </TableCell>
+              ))}
+              <TableCell className="text-right text-xs text-gray-600 tabular-nums bg-blue-50">
+                {sumByKey(data2025, 'revenue') > 0 ? formatPercent(grossMarginRevenue2025) : '—'}
+              </TableCell>
+              <TableCell className="text-right text-xs text-gray-600 tabular-nums bg-blue-50">
+                {sumByKey(data2026, 'revenue') > 0 ? formatPercent(grossMarginRevenue2026) : '—'}
               </TableCell>
             </TableRow>
 
@@ -682,24 +769,39 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
               </TableCell>
             </TableRow>
 
-            {/* 営業利益率 */}
+            {/* 営業利益率（予算比） */}
             <TableRow className="bg-gray-50">
               <TableCell className="sticky left-0 z-10 bg-gray-50 text-sm pl-6 text-gray-600">
-                営業利益率
+                営業利益率（予算比）
               </TableCell>
-              {adjustedData.map(d => {
-                const rate = d.revenue > 0 ? d.operating_profit / d.revenue : 0
-                return (
-                  <TableCell key={d.month} className="text-right text-xs text-gray-600 tabular-nums">
-                    {d.revenue > 0 ? formatPercent(rate) : '—'}
-                  </TableCell>
-                )
-              })}
+              {adjustedData.map(d => (
+                <TableCell key={d.month} className="text-right text-xs text-gray-600 tabular-nums">
+                  {d.budget > 0 ? formatPercent(d.operating_profit / d.budget) : '—'}
+                </TableCell>
+              ))}
               <TableCell className="text-right text-xs text-gray-600 tabular-nums bg-blue-50">
-                {sumByKey(data2025, 'revenue') > 0 ? formatPercent(operatingMargin2025) : '—'}
+                {sumByKey(data2025, 'budget') > 0 ? formatPercent(opMarginBudget2025) : '—'}
               </TableCell>
               <TableCell className="text-right text-xs text-gray-600 tabular-nums bg-blue-50">
-                {sumByKey(data2026, 'revenue') > 0 ? formatPercent(operatingMargin2026) : '—'}
+                {sumByKey(data2026, 'budget') > 0 ? formatPercent(opMarginBudget2026) : '—'}
+              </TableCell>
+            </TableRow>
+
+            {/* 営業利益率（売上比） */}
+            <TableRow className="bg-gray-50">
+              <TableCell className="sticky left-0 z-10 bg-gray-50 text-sm pl-6 text-gray-600">
+                営業利益率（売上比）
+              </TableCell>
+              {adjustedData.map(d => (
+                <TableCell key={d.month} className="text-right text-xs text-gray-600 tabular-nums">
+                  {d.revenue > 0 ? formatPercent(d.operating_profit / d.revenue) : '—'}
+                </TableCell>
+              ))}
+              <TableCell className="text-right text-xs text-gray-600 tabular-nums bg-blue-50">
+                {sumByKey(data2025, 'revenue') > 0 ? formatPercent(opMarginRevenue2025) : '—'}
+              </TableCell>
+              <TableCell className="text-right text-xs text-gray-600 tabular-nums bg-blue-50">
+                {sumByKey(data2026, 'revenue') > 0 ? formatPercent(opMarginRevenue2026) : '—'}
               </TableCell>
             </TableRow>
           </TableBody>
