@@ -300,7 +300,15 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
             body: JSON.stringify(syncPayload),
           })
           toast.success('保存しました')
+          // §19-1: 呼び出し元（案件一覧 / ダッシュボード等）へ戻る。
+          //   refresh で Next の Cache を invalidate し、history があれば back、
+          //   無ければ /campaigns へフォールバック。
           router.refresh()
+          if (typeof window !== 'undefined' && window.history.length > 1) {
+            setTimeout(() => router.back(), 0)
+          } else {
+            router.push('/campaigns')
+          }
         } else {
           toast.error('保存に失敗しました')
         }

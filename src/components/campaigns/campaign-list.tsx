@@ -4,15 +4,9 @@ import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Campaign, CampaignCategory, CAMPAIGN_CATEGORIES, getBillingMonth } from '@/lib/types'
-import {
-  calcUserRewardAmount,
-  calcCampaignProfit,
-  formatCurrency,
-  formatMonth,
-} from '@/lib/calculations'
+import { calcCampaignProfit, formatCurrency, formatMonth } from '@/lib/calculations'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import {
@@ -34,17 +28,8 @@ interface CampaignListProps {
   costMaps?: CostMaps
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    '未確定': 'bg-gray-100 text-gray-600',
-    'シート回収済み': 'bg-orange-100 text-orange-700',
-    '進行中': 'bg-blue-100 text-blue-700',
-    '投稿中': 'bg-purple-100 text-purple-700',
-    '完了': 'bg-green-100 text-green-700',
-  }
-  return <Badge className={colors[status] || 'bg-gray-100 text-gray-500'}>{status}</Badge>
-}
-
+// §19-3: 旧 StatusBadge は削除（status 列を案件一覧から外したため）。
+//   ※ status カラム自体は DB / 案件詳細では維持される。
 // §15-4-1: 案件種別バッジ
 const CATEGORY_BADGE_COLORS: Record<string, string> = {
   'Tagpo':           'bg-blue-100 text-blue-800',
@@ -73,49 +58,8 @@ const CERTAINTY_COLORS: Record<string, string> = {
 
 type SortOrder = 'billing_month_desc' | 'billing_month_asc' | 'budget_desc' | 'billing_amount_desc'
 
-function InlineRewardInput({ currentAmount, isManual, onSave }: {
-  currentAmount: number | null
-  isManual: boolean
-  onSave: (amount: number | null) => void
-}) {
-  const [editing, setEditing] = useState(false)
-  const [value, setValue] = useState(currentAmount?.toString() || '')
-
-  if (!editing) {
-    return (
-      <span
-        className={`cursor-pointer hover:underline tabular-nums text-sm ${isManual ? 'text-black font-medium' : 'text-gray-400'}`}
-        onClick={() => { setValue(currentAmount?.toString() || ''); setEditing(true) }}
-        title={isManual ? '手動入力値' : '自動計算値（クリックで上書き）'}
-      >
-        {currentAmount ? formatCurrency(currentAmount) : '—'}
-      </span>
-    )
-  }
-
-  return (
-    <Input
-      type="text"
-      inputMode="numeric"
-      className="h-7 text-xs w-[120px] text-right"
-      value={value}
-      autoFocus
-      onChange={e => {
-        const raw = e.target.value.replace(/,/g, '')
-        if (raw === '' || /^-?\d*$/.test(raw)) setValue(raw)
-      }}
-      onBlur={() => {
-        const num = parseFloat(value)
-        onSave(isNaN(num) || num <= 0 ? null : num)
-        setEditing(false)
-      }}
-      onKeyDown={e => {
-        if (e.key === 'Enter') e.currentTarget.blur()
-        if (e.key === 'Escape') setEditing(false)
-      }}
-    />
-  )
-}
+// §19-2: 旧 InlineRewardInput / handleRewardSave は削除（ユーザー報酬額列を一覧から外したため）。
+//   案件詳細フォームで引き続き編集できる。
 
 export function CampaignList({ campaigns, costMaps }: CampaignListProps) {
   const router = useRouter()
@@ -167,20 +111,6 @@ export function CampaignList({ campaigns, costMaps }: CampaignListProps) {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ certainty }),
-    })
-    router.refresh()
-  }
-
-  async function handleRewardSave(id: number, amount: number | null) {
-    await fetch(`/api/campaigns/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_reward_amount: amount }),
-    })
-    await fetch(`/api/campaigns/${id}/sync-reward-cost`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount }),
     })
     router.refresh()
   }
@@ -261,21 +191,11 @@ export function CampaignList({ campaigns, costMaps }: CampaignListProps) {
               <TableHead className="text-right">売上</TableHead>
               <TableHead className="text-right">合計費用</TableHead>
               <TableHead className="text-right">粗利</TableHead>
-              <TableHead className="text-right">ユーザー報酬額</TableHead>
-              <TableHead className="text-center">ステータス</TableHead>
               <TableHead className="text-center">確度</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {visibleCampaigns.map((campaign) => {
-              const rewardAmount = calcUserRewardAmount(
-                campaign.user_reward_amount,
-                campaign.budget,
-                campaign.unit_price,
-                campaign.user_reward_unit_price
-              )
-              const isManual = campaign.user_reward_amount != null && campaign.user_reward_amount > 0
-
               // §12-2: 案件単位の試算ベース
               const subcontractFee = costMaps?.subcontractByCampaign[campaign.id] ?? 0
               const adDeliveryCost = costMaps?.adDeliveryByCampaign[campaign.id] ?? 0
@@ -319,16 +239,6 @@ export function CampaignList({ campaigns, costMaps }: CampaignListProps) {
                   <TableCell className="text-right tabular-nums">{formatCurrency(campaign.billing_amount)}</TableCell>
                   <TableCell className="text-right tabular-nums text-sm">{formatCurrency(totalCost)}</TableCell>
                   <TableCell className={`text-right tabular-nums text-sm ${profitClass}`}>{formatCurrency(grossProfit)}</TableCell>
-                  <TableCell className="text-right" onClick={e => e.stopPropagation()}>
-                    <InlineRewardInput
-                      currentAmount={rewardAmount}
-                      isManual={isManual}
-                      onSave={(amount) => handleRewardSave(campaign.id, amount)}
-                    />
-                  </TableCell>
-                  <TableCell className="text-center">
-                    <StatusBadge status={campaign.status} />
-                  </TableCell>
                   <TableCell className="text-center" onClick={e => e.stopPropagation()}>
                     <Select
                       value={campaign.certainty || 'D.見込み+'}
@@ -349,7 +259,7 @@ export function CampaignList({ campaigns, costMaps }: CampaignListProps) {
             })}
             {visibleCampaigns.length === 0 && (
               <TableRow>
-                <TableCell colSpan={12} className="text-center text-gray-500 py-8">
+                <TableCell colSpan={10} className="text-center text-gray-500 py-8">
                   該当する案件がありません
                 </TableCell>
               </TableRow>
