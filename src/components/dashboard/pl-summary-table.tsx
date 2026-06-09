@@ -57,9 +57,11 @@ const SGA_ROWS: CostRow[] = [
   { key: 'personnel_cost', label: 'アルバイト・イベント・インターン',     plKey: 'personnel_cost', expandable: false },
 ]
 
-// §14: 確度 5 値マルチセレクト
-const ALL_CERTAINTY = ['A.完了', 'B.進行中', 'C.受注確定', 'D.見込み+', 'E.見込み-'] as const
+// §14: 確度マルチセレクト、§18 で F.失注 を追加
+const ALL_CERTAINTY = ['A.完了', 'B.進行中', 'C.受注確定', 'D.見込み+', 'E.見込み-', 'F.失注'] as const
 type Certainty = typeof ALL_CERTAINTY[number]
+// §18: F.失注 を除いた集合をデフォルト ON にする（失注は売上/原価から除外したい）
+const DEFAULT_CERTAINTY: readonly Certainty[] = ALL_CERTAINTY.filter(c => c !== 'F.失注')
 
 // 旧文字列（'確定'/'見込み'/'未確定'）を 5 値へ正規化。不明値は null（PL から除外）
 function normalizeCertainty(raw: string): Certainty | null {
@@ -77,15 +79,19 @@ const CERTAINTY_BTN_COLOR: Record<Certainty, string> = {
   'C.受注確定': 'bg-violet-600 hover:bg-violet-700',
   'D.見込み+': 'bg-amber-500 hover:bg-amber-600',
   'E.見込み-': 'bg-zinc-400 hover:bg-zinc-500',
+  'F.失注':    'bg-red-700 hover:bg-red-800',
 }
 
 export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDetails }: PLSummaryTableProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  // §14: 確度 5 値マルチセレクト。初期は全選択（＝従来の「全体」と同じ集計）
-  const [certaintySet, setCertaintySet] = useState<Set<Certainty>>(() => new Set(ALL_CERTAINTY))
+  // §18: 初期は F.失注 を除いた A〜E のみ ON（失注は予実から除外したいため）
+  const [certaintySet, setCertaintySet] = useState<Set<Certainty>>(() => new Set(DEFAULT_CERTAINTY))
 
   const isAllSelected = certaintySet.size === ALL_CERTAINTY.length
   const isNoneSelected = certaintySet.size === 0
+  // §18: 「失注以外」(A〜E) 完全一致
+  const isDefaultSelected = certaintySet.size === DEFAULT_CERTAINTY.length
+    && DEFAULT_CERTAINTY.every(c => certaintySet.has(c))
 
   function toggleCertainty(c: Certainty) {
     setCertaintySet(prev => {
@@ -341,9 +347,10 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
   const opMarginRevenue2025 = rateRevenue(data2025, 'operating_profit')
   const opMarginRevenue2026 = rateRevenue(data2026, 'operating_profit')
 
-  // §14: 選択集合をファイル名用ラベルに（A〜E の先頭1文字を連結）
+  // §14/§18: 選択集合をファイル名用ラベルに（A〜F の先頭1文字を連結）
   function certaintyLabel(): string {
-    if (isAllSelected) return '全件'
+    if (isAllSelected) return '全件'           // A〜F すべて ON
+    if (isDefaultSelected) return '通常'        // §18: A〜E のみ（F除く・デフォルト）
     if (isNoneSelected) return '空'
     return ALL_CERTAINTY.filter(c => certaintySet.has(c)).map(c => c.charAt(0)).join('')
   }
@@ -447,6 +454,15 @@ export function PLSummaryTable({ data, revenueDetails, costDetails, costStatusDe
                 disabled={isAllSelected}
               >
                 全選択
+              </Button>
+              {/* §18: 失注以外（A〜E）一発で戻す */}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setCertaintySet(new Set(DEFAULT_CERTAINTY))}
+                disabled={isDefaultSelected}
+              >
+                失注以外
               </Button>
               <Button
                 size="sm"

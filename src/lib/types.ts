@@ -15,13 +15,14 @@ export type CostType =
   // ※ 'review_cost' は §11 で DB 書込廃止（EG ページの fixed_costs 由来に一本化）。
   //   案件単位の試算値は粗利サマリー UI のみ（DB 書込なし）。
 
-// 確度（§12-3 で 5 値に拡張）
+// 確度（§12-3 で 5 値に拡張、§18 で F.失注 を追加）
 export type CampaignCertainty =
   | 'A.完了'
   | 'B.進行中'
   | 'C.受注確定'
   | 'D.見込み+'
   | 'E.見込み-'
+  | 'F.失注'
 
 // 案件種別（§15-3 で追加。DB は campaign_category_t ENUM）
 export type CampaignCategory = 'Tagpo' | 'POSCO' | 'インフルエンサー' | 'その他'

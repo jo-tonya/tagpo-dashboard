@@ -354,16 +354,17 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
         </div>
       </div>
 
-      {/* Certainty Selector (§12-3: 5 値) */}
+      {/* Certainty Selector (§12-3: 5 値, §18: F.失注 追加) */}
       <div className="flex items-center gap-2 mb-2 flex-wrap">
         <span className="text-sm font-medium text-gray-600">確度:</span>
-        {(['A.完了', 'B.進行中', 'C.受注確定', 'D.見込み+', 'E.見込み-'] as const).map(c => {
+        {(['A.完了', 'B.進行中', 'C.受注確定', 'D.見込み+', 'E.見込み-', 'F.失注'] as const).map(c => {
           const activeColor =
-            c === 'A.完了'      ? 'bg-green-600 hover:bg-green-700'
-            : c === 'B.進行中'  ? 'bg-blue-600 hover:bg-blue-700'
+              c === 'A.完了'      ? 'bg-green-600 hover:bg-green-700'
+            : c === 'B.進行中'   ? 'bg-blue-600 hover:bg-blue-700'
             : c === 'C.受注確定' ? 'bg-indigo-600 hover:bg-indigo-700'
-            : c === 'D.見込み+' ? 'bg-yellow-500 hover:bg-yellow-600'
-            : 'bg-gray-500 hover:bg-gray-600'
+            : c === 'D.見込み+'  ? 'bg-yellow-500 hover:bg-yellow-600'
+            : c === 'E.見込み-'  ? 'bg-gray-500 hover:bg-gray-600'
+            :                      'bg-red-700 hover:bg-red-800'   // F.失注
           return (
             <Button
               key={c}

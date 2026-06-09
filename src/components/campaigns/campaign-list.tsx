@@ -56,14 +56,15 @@ function CategoryBadge({ category }: { category: string }) {
   return <Badge className={CATEGORY_BADGE_COLORS[category] || CATEGORY_BADGE_COLORS['その他']}>{category}</Badge>
 }
 
-// §12-3: 5値の確度色
-const CERTAINTY_LIST = ['A.完了', 'B.進行中', 'C.受注確定', 'D.見込み+', 'E.見込み-'] as const
+// §12-3: 5値の確度色、§18 で F.失注 を追加
+const CERTAINTY_LIST = ['A.完了', 'B.進行中', 'C.受注確定', 'D.見込み+', 'E.見込み-', 'F.失注'] as const
 const CERTAINTY_COLORS: Record<string, string> = {
   'A.完了':      'text-green-700',
   'B.進行中':    'text-blue-700',
   'C.受注確定':  'text-indigo-700',
   'D.見込み+':   'text-yellow-700',
   'E.見込み-':   'text-gray-600',
+  'F.失注':     'text-red-700 line-through',
   // 旧値の後方互換
   '確定':       'text-green-700',
   '見込み':     'text-blue-700',
@@ -123,6 +124,8 @@ export function CampaignList({ campaigns, costMaps }: CampaignListProps) {
   const [categoryFilter, setCategoryFilter] = useState<'all' | CampaignCategory>('all')
   const [billingMonthFilter, setBillingMonthFilter] = useState<string>('all')
   const [sortOrder, setSortOrder] = useState<SortOrder>('billing_month_desc')
+  // §18: 失注案件はデフォルト非表示
+  const [showLost, setShowLost] = useState(false)
 
   const availableBillingMonths = useMemo(() => {
     const set = new Set<string>()
@@ -135,6 +138,8 @@ export function CampaignList({ campaigns, costMaps }: CampaignListProps) {
 
   const visibleCampaigns = useMemo(() => {
     let list = campaigns
+    // §18: F.失注 はデフォルト非表示
+    if (!showLost) list = list.filter(c => c.certainty !== 'F.失注')
     if (categoryFilter !== 'all') {
       list = list.filter(c => (c.category ?? 'Tagpo') === categoryFilter)
     }
@@ -155,7 +160,7 @@ export function CampaignList({ campaigns, costMaps }: CampaignListProps) {
           return 0
       }
     })
-  }, [campaigns, categoryFilter, billingMonthFilter, sortOrder])
+  }, [campaigns, categoryFilter, billingMonthFilter, sortOrder, showLost])
 
   async function handleCertaintyChange(id: number, certainty: string) {
     await fetch(`/api/campaigns/${id}/certainty`, {
@@ -203,6 +208,16 @@ export function CampaignList({ campaigns, costMaps }: CampaignListProps) {
                 {c}
               </Button>
             ))}
+            {/* §18: 失注を表示トグル */}
+            <Button
+              size="sm"
+              variant={showLost ? 'default' : 'outline'}
+              className={showLost ? 'bg-red-700 hover:bg-red-800' : ''}
+              onClick={() => setShowLost(v => !v)}
+              title="失注案件を一覧に含める"
+            >
+              失注を表示
+            </Button>
           </div>
 
           <div className="flex items-center gap-2 ml-auto flex-wrap">
