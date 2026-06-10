@@ -1,6 +1,8 @@
 import { createClient } from '@/lib/supabase/server'
 import { MonthlyBudget } from '../types'
 
+// §20-3: unstable_cache は Supabase auth（cookies）と非互換のため不採用。
+//   ページ側の export const revalidate と revalidatePath で対応する。
 export async function getMonthlyBudgets(): Promise<MonthlyBudget[]> {
   const supabase = await createClient()
   const { data, error } = await supabase

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { getCampaign, updateCampaign, deleteCampaign } from '@/lib/data/campaigns'
 
 export async function GET(
@@ -31,6 +32,7 @@ export async function PUT(
     const body = await request.json()
     const campaign = await updateCampaign(campaignId, body)
     if (!campaign) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    revalidatePath('/', 'layout')
     return NextResponse.json(campaign)
   } catch (error) {
     console.error(`PUT /api/campaigns/${id} error:`, error)
@@ -49,6 +51,7 @@ export async function DELETE(
   try {
     const success = await deleteCampaign(campaignId)
     if (!success) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    revalidatePath('/', 'layout')
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error(`DELETE /api/campaigns/${id} error:`, error)

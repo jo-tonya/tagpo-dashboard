@@ -187,3 +187,7 @@ export async function getCostStatusDetails(): Promise<CostStatusDetail[]> {
 
   return results
 }
+
+// §20-3: unstable_cache は Supabase auth（cookies）と非互換のため不採用。
+//   代わりに page.tsx 側で `export const revalidate = 60` を設定し、
+//   書き込み API では revalidatePath('/', 'page') 等で即時無効化する。

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { revalidatePath } from 'next/cache'
 
 export async function PUT(
   request: Request,
@@ -17,6 +18,7 @@ export async function PUT(
       .update({ status })
       .eq('id', campaignId)
     if (error) throw error
+    revalidatePath('/', 'layout')
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error(`PUT /api/campaigns/${id}/status error:`, error)

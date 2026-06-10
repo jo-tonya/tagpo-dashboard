@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { calcRequiredViews } from '@/lib/calculations'
 
 export async function POST(
@@ -31,6 +32,7 @@ export async function POST(
       .delete()
       .eq('campaign_id', campaignId)
       .eq('cost_type', 'tonya_user_payment')
+    revalidatePath('/', 'layout')
     return NextResponse.json({ ok: true, deleted: true })
   }
 
@@ -71,5 +73,6 @@ export async function POST(
       })
   }
 
+  revalidatePath('/', 'layout')
   return NextResponse.json({ ok: true, amount: finalAmount })
 }

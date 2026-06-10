@@ -4,6 +4,10 @@ import { BudgetActualSection } from '@/components/dashboard/budget-actual-sectio
 import { getMonthlyPL, getRevenueDetails, getCostDetails, getCostStatusDetails } from '@/lib/data/dashboard'
 import { getMonthlyBudgets } from '@/lib/data/budgets'
 
+// §20-3: ページ単位で 60 秒キャッシュ。書き込み API 側の
+// revalidatePath('/', 'layout') で即時無効化できる。
+export const revalidate = 60
+
 export default async function DashboardPage() {
   const [monthlyPL, revenueDetails, costDetails, costStatusDetails, budgets] = await Promise.all([
     getMonthlyPL(),

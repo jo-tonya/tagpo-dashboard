@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 
 // 派生コスト（misc / ad_delivery / product / tonya_user_payment）を一括 upsert する。
 // body: { miscCost, adDelivery, productCost, userReward } 各 number | null
@@ -69,6 +70,7 @@ export async function POST(
     }
   }
 
+  revalidatePath('/', 'layout')
   return NextResponse.json({ ok: true })
 }
 

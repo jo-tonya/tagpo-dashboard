@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { upsertMonthlyBudget, getMonthlyBudgets } from '@/lib/data/budgets'
 
 export async function GET() {
@@ -29,6 +30,8 @@ export async function POST(request: NextRequest) {
     if (result.error) {
       return NextResponse.json({ error: result.error.message }, { status: 500 })
     }
+    revalidatePath('/budgets', 'layout')
+    revalidatePath('/', 'layout')
     return NextResponse.json({ ok: true })
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 })
