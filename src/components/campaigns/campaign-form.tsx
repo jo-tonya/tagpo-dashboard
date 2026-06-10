@@ -301,11 +301,12 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
           })
           toast.success('保存しました')
           // §19-1: 呼び出し元（案件一覧 / ダッシュボード等）へ戻る。
-          //   refresh で Next の Cache を invalidate し、history があれば back、
-          //   無ければ /campaigns へフォールバック。
-          router.refresh()
+          //   router.refresh() を間に挟むと back が打ち消される事例があるため、
+          //   router.back() 単独で実行する。履歴が無い直接アクセスの場合は
+          //   /campaigns へ push。戻り先の Next Cache は遷移後の遷移先で
+          //   <Link prefetch> や server fetch の revalidate に任せる。
           if (typeof window !== 'undefined' && window.history.length > 1) {
-            setTimeout(() => router.back(), 0)
+            router.back()
           } else {
             router.push('/campaigns')
           }
