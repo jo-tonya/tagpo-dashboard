@@ -300,16 +300,12 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
             body: JSON.stringify(syncPayload),
           })
           toast.success('保存しました')
-          // §19-1: 呼び出し元（案件一覧 / ダッシュボード等）へ戻る。
-          //   router.refresh() を間に挟むと back が打ち消される事例があるため、
-          //   router.back() 単独で実行する。履歴が無い直接アクセスの場合は
-          //   /campaigns へ push。戻り先の Next Cache は遷移後の遷移先で
-          //   <Link prefetch> や server fetch の revalidate に任せる。
-          if (typeof window !== 'undefined' && window.history.length > 1) {
-            router.back()
-          } else {
-            router.push('/campaigns')
-          }
+          // §21: BFCache 回避のため router.back() ではなく router.push(referrer) で戻る。
+          //   - same-origin の referrer がある場合: そこへ push（Server Component が
+          //     再実行されるので revalidatePath で無効化された最新値が表示される）
+          //   - referrer が外部 or 空: /campaigns へフォールバック
+          //   - 編集画面自身が referrer の場合は除外（リロードして戻る場合の安全策）
+          router.push(resolveReturnTarget(campaign!.id))
         } else {
           toast.error('保存に失敗しました')
         }
@@ -790,4 +786,28 @@ function RowKV({ label, value }: { label: string; value: number | null }) {
       <span className="tabular-nums">{value != null && value > 0 ? formatCurrency(value) : '—'}</span>
     </div>
   )
+}
+
+/**
+ * §21: 保存後の戻り先 URL を決定する。
+ *   - document.referrer が same-origin なら pathname + search を返す
+ *   - referrer が無い / 外部 / パース不可なら '/campaigns' へフォールバック
+ *   - 編集画面自身（/campaigns/{id}）が referrer の場合も /campaigns へ
+ *
+ * router.back() を避けることでブラウザの BFCache 復元を回避し、
+ * Server Component の再フェッチを保証する。
+ */
+function resolveReturnTarget(currentCampaignId: number): string {
+  if (typeof window === 'undefined') return '/campaigns'
+  const ref = document.referrer
+  if (!ref) return '/campaigns'
+  try {
+    const refUrl = new URL(ref)
+    if (refUrl.origin !== window.location.origin) return '/campaigns'
+    const path = refUrl.pathname + refUrl.search
+    if (path.startsWith(`/campaigns/${currentCampaignId}`)) return '/campaigns'
+    return path
+  } catch {
+    return '/campaigns'
+  }
 }
