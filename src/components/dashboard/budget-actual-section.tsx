@@ -194,7 +194,7 @@ export function BudgetActualCharts({ monthlyPL, viewMode }: ChartsProps) {
         <CardTitle className="text-lg">予算 vs 売上</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-[280px]">
+        <div className="h-[220px] md:h-[280px]">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />

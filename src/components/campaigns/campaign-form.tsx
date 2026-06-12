@@ -151,11 +151,16 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
   )
   const adDeliveryCost = parseFloat(form.ad_delivery_amount) || 0
   const miscCost = parseFloat(form.misc_amount) || 0
-  const manualUserReward = form.user_reward_amount ? parseFloat(form.user_reward_amount) : null
+  // §23: 空文字 → null（未入力）、それ以外は parseFloat（0 を含む）。NaN は null 扱い。
+  const manualUserReward = (() => {
+    if (form.user_reward_amount === '') return null
+    const n = parseFloat(form.user_reward_amount)
+    return Number.isFinite(n) ? n : null
+  })()
 
-  // 自動計算のユーザー報酬（手動値が無いとき）
+  // 自動計算のユーザー報酬（手動値が無いとき）。§23: manual が 0 でも明示 0 として尊重
   const rewardAutoCalc = useMemo(() => {
-    if (manualUserReward != null && manualUserReward > 0) return manualUserReward
+    if (manualUserReward !== null) return manualUserReward
     if (requiredViews <= 0) return 0
     return Math.round(requiredViews * userRewardUnitPrice)
   }, [requiredViews, userRewardUnitPrice, manualUserReward])
@@ -244,7 +249,8 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
         product_unit_price: form.product_unit_price ? parseFloat(form.product_unit_price) : null,
         review_unit_price: form.review_unit_price ? parseFloat(form.review_unit_price) : null,
         user_reward_unit_price: form.user_reward_unit_price ? parseFloat(form.user_reward_unit_price) : null,
-        user_reward_amount: form.user_reward_amount ? parseFloat(form.user_reward_amount) : null,
+        // §23: manualUserReward は null / 0 / >0 を区別済み（"0" を保存できる）
+        user_reward_amount: manualUserReward,
         posters_count: postersCount,
         // Subcontracts
         subcontracts: subs.filter(s => s.company_name.trim()).map(s => ({
@@ -261,12 +267,13 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
       // 派生コスト（misc / ad_delivery / product / user_reward）の同期 payload
       // ※ §11: 審査費は EG ページから集計するので案件側では DB に書き込まない（二重計上排除）
       // ※ §12-1: 商品代は復活（DB 書込あり）
-      // ユーザー報酬は手動値があればそれ、無ければ自動計算（profit.userReward）
+      // §23: 明示 0 を保持。profit.userReward は manual=0 の時 0 が返るのでそのまま流す。
+      //      adDelivery / productCost / miscCost も null（未入力）と 0（明示 0）を区別。
       const syncPayload = {
-        userReward: profit.userReward > 0 ? profit.userReward : null,
-        adDelivery: adDeliveryCost > 0 ? adDeliveryCost : null,
-        productCost: profit.productCost != null && profit.productCost > 0 ? profit.productCost : null,
-        miscCost: miscCost > 0 ? miscCost : null,
+        userReward: profit.userReward,
+        adDelivery: form.ad_delivery_amount === '' ? null : adDeliveryCost,
+        productCost: profit.productCost,
+        miscCost: form.misc_amount === '' ? null : miscCost,
       }
 
       if (mode === 'create') {

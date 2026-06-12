@@ -4,7 +4,8 @@ import { revalidatePath } from 'next/cache'
 
 // 派生コスト（misc / ad_delivery / product / tonya_user_payment）を一括 upsert する。
 // body: { miscCost, adDelivery, productCost, userReward } 各 number | null
-// null/0 のキーは削除、>0 のキーは upsert（target_month は campaigns.view_complete の月初）
+// §23: null（未入力）のキーのみ削除。0 を含む数値は upsert（明示的に 0 円の支払いとして記録）。
+// target_month は campaigns.view_complete の月初。
 // ※ review_cost は §11 で DB 書込廃止（body.reviewCost が来ても無視）。
 //    ダッシュボードの審査費は EG ページ（fixed_costs）から取得する。
 // ※ product_cost は §12-1 で復活（方針 B: ダッシュボードにも表示）
@@ -36,7 +37,8 @@ export async function POST(
   ]
 
   for (const item of items) {
-    if (item.amount == null || item.amount <= 0) {
+    // §23: null（未入力）のみ削除。0（明示 0 円）は行として upsert する。
+    if (item.amount == null) {
       await supabase
         .from('campaign_costs')
         .delete()

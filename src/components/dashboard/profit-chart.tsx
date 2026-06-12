@@ -40,7 +40,7 @@ export function ProfitChart({ data }: ProfitChartProps) {
         <CardTitle className="text-lg">事業利益推移</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="h-[350px]">
+        <div className="h-[260px] md:h-[350px]">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />

@@ -26,7 +26,8 @@ export async function POST(
     }
   }
 
-  if (finalAmount == null || finalAmount <= 0) {
+  // §23: null（未入力）のみ削除。0 は明示 0 として upsert。
+  if (finalAmount == null) {
     await supabase
       .from('campaign_costs')
       .delete()

@@ -98,7 +98,8 @@ export function calcUserRewardAmount(
   unitPrice: number | null,
   userRewardUnitPrice: number | null
 ): number | null {
-  if (manualAmount != null && manualAmount > 0) return manualAmount
+  // §23: manual が 0 でも明示的な「0 円」として扱う（自動計算へフォールバックしない）
+  if (manualAmount !== null) return manualAmount
   if (!budget || !unitPrice) return null
   const rewardRate = userRewardUnitPrice ?? 0.4
   const requiredViews = calcRequiredViews(budget, unitPrice)
@@ -153,7 +154,8 @@ export function calcCampaignProfit(params: {
   const productCost: number | null = params.postersCount != null && params.postersCount > 0 && params.productUnitPrice > 0
     ? Math.round(params.postersCount * params.productUnitPrice)
     : null
-  const userReward = params.manualUserReward != null && params.manualUserReward > 0
+  // §23: manualUserReward が 0 でも明示 0 として扱う
+  const userReward = params.manualUserReward !== null
     ? params.manualUserReward
     : Math.round(requiredViews * params.userRewardUnitPrice)
   const subcontract = params.subcontractFee
