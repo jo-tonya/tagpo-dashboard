@@ -254,3 +254,48 @@ export interface CostDetail {
   cost_label: string
   amount: number
 }
+
+// ───────── 目標・KPI タブ（改修㉔） ─────────
+
+// KPI 指標キー。売上系は campaigns から動的算出、ユーザー系は手入力。
+export type KpiMetricKey =
+  // Tagpo セールス（campaigns から算出）
+  | 'adinte_revenue'        // アドインテからの売上
+  | 'adinte_count'          // アドインテからの案件数
+  | 'new_agency_kinds'      // 新規代理店数（その月の代理店の異なり数）
+  | 'new_agency_revenue'    // 新規代理店からの売上
+  | 'new_agency_deals'      // 新規代理店からの案件数
+  | 'own_revenue'           // 自社チャネルの売上
+  | 'own_count'             // 自社チャネルの案件数
+  // Tagpo ユーザー（手入力）
+  | 'user_count'            // ユーザー数
+  | 'active_rate'           // アクティブ率（0〜1）
+  | 'active_user_count'     // アクティブユーザー数
+
+// 確度バケット（C 以上＝確定 / D・E＝未確定。F.失注は集計対象外）
+export interface KpiBucketed {
+  confirmed: number    // A.完了 / B.進行中 / C.受注確定
+  unconfirmed: number  // D.見込み+ / E.見込み-
+}
+
+// 売上系 KPI の月次実績（campaigns から算出）
+// actuals[month][metricKey] = { confirmed, unconfirmed }
+export type KpiActuals = Record<string, Partial<Record<KpiMetricKey, KpiBucketed>>>
+
+// 手入力値（目標／ユーザー系実績）
+export type KpiManualKind = 'target' | 'actual'
+export interface KpiManualValue {
+  month: string
+  metric_key: KpiMetricKey
+  kind: KpiManualKind
+  value: number
+}
+
+// 月ごとの重要アクション
+export interface KpiAction {
+  id: string
+  month: string
+  text: string
+  checked: boolean
+  sort_order: number
+}
