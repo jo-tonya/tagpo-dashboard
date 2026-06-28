@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
@@ -63,15 +64,24 @@ export function Sidebar({
       <div className="flex h-14 items-center justify-between border-b px-3">
         <Link
           href="/"
-          className="flex items-center gap-2 overflow-hidden"
+          className={cn(
+            'flex items-center overflow-hidden',
+            collapsed && 'md:justify-center',
+          )}
           onClick={onCloseMobile}
         >
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-600 text-white font-bold text-sm">
-            T
-          </div>
-          {!collapsed && (
-            <span className="font-bold text-lg whitespace-nowrap md:inline">Tagpo</span>
-          )}
+          {/* ロゴ（ワードマーク）。展開時はフル表示、折り畳み時は幅に収める。 */}
+          <Image
+            src="/tagpo-logo.png"
+            alt="Tagpo"
+            width={2161}
+            height={933}
+            priority
+            className={cn(
+              'object-contain object-left',
+              collapsed ? 'h-6 w-auto md:h-auto md:w-8' : 'h-6 w-auto',
+            )}
+          />
         </Link>
         <button
           type="button"
