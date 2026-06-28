@@ -187,8 +187,10 @@ function KpiMatrix({
     )
   }
 
-  const stickyA = 'sticky left-0 z-10 bg-white'
-  const stickyB = 'sticky left-40 z-10 bg-white'
+  // 左 2 列は横スクロール時に固定。幅を固定し、ラベルは折り返さない（縦に伸びるのを防ぐ）。
+  // stickyB の left は stickyA(指標) の幅と一致させる。
+  const stickyA = 'sticky left-0 z-10 bg-white whitespace-nowrap'
+  const stickyB = 'sticky left-[160px] z-10 bg-white whitespace-nowrap'
 
   return (
     <Card>
@@ -215,10 +217,10 @@ function KpiMatrix({
         <table className="w-full border-collapse text-xs">
           <thead>
             <tr className="border-b">
-              <th className={`${stickyA} w-40 px-2 py-2 text-left font-medium`}>指標</th>
-              <th className={`${stickyB} w-28 px-2 py-2 text-left font-medium`}>区分</th>
+              <th className={`${stickyA} w-[160px] min-w-[160px] px-3 py-2 text-left font-medium`}>指標</th>
+              <th className={`${stickyB} w-[120px] min-w-[120px] px-3 py-2 text-left font-medium`}>区分</th>
               {months.map(month => (
-                <th key={month} className="min-w-[100px] px-2 py-2 text-right font-medium whitespace-nowrap">
+                <th key={month} className="min-w-[110px] px-3 py-2 text-right font-medium whitespace-nowrap">
                   {formatMonth(month)}
                 </th>
               ))}
