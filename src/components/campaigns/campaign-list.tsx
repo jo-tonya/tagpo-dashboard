@@ -211,6 +211,7 @@ export function CampaignList({ campaigns, costMaps }: CampaignListProps) {
                 reviewUnitPrice: campaign.review_unit_price ?? 1000,
                 userRewardUnitPrice: campaign.user_reward_unit_price ?? 0.4,
                 manualUserReward: campaign.user_reward_amount ?? null,
+                certainty: campaign.certainty,
                 subcontractFee,
                 adDeliveryCost,
                 miscCost,

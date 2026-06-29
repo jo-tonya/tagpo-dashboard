@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
-import { calcRequiredViews } from '@/lib/calculations'
+import { calcRequiredViews, userRewardBufferFactor } from '@/lib/calculations'
 
 export async function POST(
   request: NextRequest,
@@ -17,12 +17,14 @@ export async function POST(
   if (finalAmount == null) {
     const { data: campaign } = await supabase
       .from('campaigns')
-      .select('budget, unit_price, user_reward_unit_price')
+      .select('budget, unit_price, user_reward_unit_price, certainty')
       .eq('id', campaignId)
       .single()
-    if (campaign?.budget && campaign?.unit_price && campaign?.user_reward_unit_price) {
+    if (campaign?.budget && campaign?.unit_price) {
+      // 改修㉕: 単価未設定はデフォルト 0.4、見込み（D/E）は ×1.1 バッファ
+      const rate = campaign.user_reward_unit_price ?? 0.4
       const rv = calcRequiredViews(campaign.budget, campaign.unit_price)
-      finalAmount = Math.round(rv * campaign.user_reward_unit_price)
+      finalAmount = Math.round(rv * rate * userRewardBufferFactor(campaign.certainty))
     }
   }
 

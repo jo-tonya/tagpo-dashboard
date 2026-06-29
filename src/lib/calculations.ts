@@ -89,21 +89,35 @@ export function calcGrossProfit(params: {
 }
 
 /**
+ * ユーザー報酬の見込みバッファ係数（改修㉕）。
+ * 確度が「見込み」（D.見込み+ / E.見込み-）の案件は、自動算出のユーザー報酬に
+ * 10% のバッファを乗せて多めに見積もる。受注確定（C 以上）では等倍＝バッファ無し。
+ * 手入力値には適用しない（自動算出のみ）。
+ */
+export const USER_REWARD_FORECAST_BUFFER = 1.1
+export function userRewardBufferFactor(certainty: string | null | undefined): number {
+  const head = (certainty ?? '').charAt(0)
+  return head === 'D' || head === 'E' ? USER_REWARD_FORECAST_BUFFER : 1
+}
+
+/**
  * ユーザー報酬額を算出
  * 手動値があればそれを使い、なければ 必要再生回数 × ユーザー報酬単価（デフォルト 0.4）
+ * × 見込みバッファ（見込み案件は ×1.1、確定は ×1.0）
  */
 export function calcUserRewardAmount(
   manualAmount: number | null,
   budget: number | null,
   unitPrice: number | null,
-  userRewardUnitPrice: number | null
+  userRewardUnitPrice: number | null,
+  certainty?: string | null
 ): number | null {
   // §23: manual が 0 でも明示的な「0 円」として扱う（自動計算へフォールバックしない）
   if (manualAmount !== null) return manualAmount
   if (!budget || !unitPrice) return null
   const rewardRate = userRewardUnitPrice ?? 0.4
   const requiredViews = calcRequiredViews(budget, unitPrice)
-  return Math.round(requiredViews * rewardRate)
+  return Math.round(requiredViews * rewardRate * userRewardBufferFactor(certainty))
 }
 
 /**
@@ -141,6 +155,7 @@ export function calcCampaignProfit(params: {
   reviewUnitPrice: number       // デフォルト 1000 を呼び出し側で渡す
   userRewardUnitPrice: number   // デフォルト 0.4 を呼び出し側で渡す
   manualUserReward: number | null
+  certainty?: string | null     // 改修㉕: 見込み（D/E）なら自動ユーザー報酬に ×1.1 バッファ
   subcontractFee: number
   adDeliveryCost: number
   miscCost: number
@@ -155,9 +170,10 @@ export function calcCampaignProfit(params: {
     ? Math.round(params.postersCount * params.productUnitPrice)
     : null
   // §23: manualUserReward が 0 でも明示 0 として扱う
+  // 改修㉕: 自動算出時のみ見込みバッファ（D/E は ×1.1）を乗せる。手入力には乗せない。
   const userReward = params.manualUserReward !== null
     ? params.manualUserReward
-    : Math.round(requiredViews * params.userRewardUnitPrice)
+    : Math.round(requiredViews * params.userRewardUnitPrice * userRewardBufferFactor(params.certainty))
   const subcontract = params.subcontractFee
   const adDelivery = params.adDeliveryCost
   const misc = params.miscCost

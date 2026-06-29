@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { Campaign, CampaignSubcontract, CampaignCategory, CAMPAIGN_CATEGORIES, campaignDisplayName } from '@/lib/types'
-import { calcGuaranteedViews, calcRequiredViews, calcTargetPosts, calcCampaignProfit, calcRevenue, formatCurrency, formatPercent, formatNumber } from '@/lib/calculations'
+import { calcGuaranteedViews, calcRequiredViews, calcTargetPosts, calcCampaignProfit, calcRevenue, formatCurrency, formatPercent, formatNumber, userRewardBufferFactor } from '@/lib/calculations'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -159,11 +159,12 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
   })()
 
   // 自動計算のユーザー報酬（手動値が無いとき）。§23: manual が 0 でも明示 0 として尊重
+  // 改修㉕: 見込み（D/E）は ×1.1 バッファを乗せる
   const rewardAutoCalc = useMemo(() => {
     if (manualUserReward !== null) return manualUserReward
     if (requiredViews <= 0) return 0
-    return Math.round(requiredViews * userRewardUnitPrice)
-  }, [requiredViews, userRewardUnitPrice, manualUserReward])
+    return Math.round(requiredViews * userRewardUnitPrice * userRewardBufferFactor(form.certainty))
+  }, [requiredViews, userRewardUnitPrice, manualUserReward, form.certainty])
 
   // 精緻な粗利サマリー
   const profit = useMemo(() => calcCampaignProfit({
@@ -177,6 +178,7 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
     reviewUnitPrice,
     userRewardUnitPrice,
     manualUserReward,
+    certainty: form.certainty,
     subcontractFee,
     adDeliveryCost,
     miscCost,
@@ -184,7 +186,7 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
     budget, unitPrice, avgViews, postersCount,
     form.retail_margin, form.agency_margin,
     productUnitPrice, reviewUnitPrice, userRewardUnitPrice,
-    manualUserReward, subcontractFee, adDeliveryCost, miscCost,
+    manualUserReward, form.certainty, subcontractFee, adDeliveryCost, miscCost,
   ])
 
   // Subcontract handlers
@@ -578,7 +580,8 @@ export function CampaignForm({ campaign, subcontracts: initialSubs, initialAdDel
                 <Label>ユーザー報酬額（自動 or 手動）</Label>
                 <NumericInput value={form.user_reward_amount} onChange={v => setForm(p => ({ ...p, user_reward_amount: v }))} placeholder={rewardAutoCalc > 0 ? `自動: ${formatCurrency(rewardAutoCalc)}` : ''} />
                 <p className="text-xs text-gray-400">
-                  空欄 = 必要再生回数({formatNumber(requiredViews)}) × 報酬単価(¥{form.user_reward_unit_price || DEFAULT_USER_REWARD_UNIT_PRICE}) で自動算出
+                  空欄 = 必要再生回数({formatNumber(requiredViews)}) × 報酬単価(¥{form.user_reward_unit_price || DEFAULT_USER_REWARD_UNIT_PRICE})
+                  {userRewardBufferFactor(form.certainty) !== 1 && ` × 見込みバッファ(${userRewardBufferFactor(form.certainty)})`} で自動算出
                 </p>
               </div>
               <div className="space-y-2">
