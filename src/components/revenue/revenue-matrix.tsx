@@ -13,6 +13,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { CertaintyFilterBar, useCertaintyFilter } from '@/components/shared/certainty-filter'
 
 interface RevenueMatrixProps {
   campaigns: Campaign[]
@@ -27,8 +28,13 @@ const MONTHS = [
 ]
 
 export function RevenueMatrix({ campaigns }: RevenueMatrixProps) {
-  // billing_amount があるキャンペーンのみ
-  const withBilling = campaigns.filter(c => c.billing_amount != null && c.billing_amount > 0)
+  // 確度フィルタ（初期は失注以外）
+  const certaintyFilter = useCertaintyFilter()
+
+  // billing_amount があり、かつ選択中の確度に該当するキャンペーンのみ
+  const withBilling = campaigns.filter(
+    c => c.billing_amount != null && c.billing_amount > 0 && certaintyFilter.matches(c.certainty),
+  )
 
   // 月ごとの合計を事前計算
   const monthlyTotals: Record<string, number> = {}
@@ -44,7 +50,10 @@ export function RevenueMatrix({ campaigns }: RevenueMatrixProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">月次×案件 収入マトリクス</CardTitle>
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <CardTitle className="text-base whitespace-nowrap">月次×案件 収入マトリクス</CardTitle>
+          <CertaintyFilterBar filter={certaintyFilter} />
+        </div>
       </CardHeader>
       <CardContent className="overflow-x-auto">
         <Table>

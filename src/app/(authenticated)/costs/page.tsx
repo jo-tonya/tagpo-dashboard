@@ -9,7 +9,7 @@ export default async function CostsPage() {
     supabase.from('fixed_costs').select('*').order('target_month'),
     supabase.from('personnel_payments').select('*').order('target_month'),
     supabase.from('campaign_costs').select('*').order('target_month'),
-    supabase.from('campaigns').select('id, maker, product'),
+    supabase.from('campaigns').select('id, maker, product, certainty'),
   ])
 
   return (

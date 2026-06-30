@@ -15,6 +15,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
+import { CERTAINTY_RANK } from '@/components/shared/certainty-filter'
 
 interface CostMaps {
   subcontractByCampaign: Record<number, number>
@@ -56,7 +57,7 @@ const CERTAINTY_COLORS: Record<string, string> = {
   '未確定':     'text-yellow-700',
 }
 
-type SortOrder = 'billing_month_desc' | 'billing_month_asc' | 'budget_desc' | 'billing_amount_desc'
+type SortOrder = 'billing_month_desc' | 'billing_month_asc' | 'budget_desc' | 'billing_amount_desc' | 'certainty_asc'
 
 // §19-2: 旧 InlineRewardInput / handleRewardSave は削除（ユーザー報酬額列を一覧から外したため）。
 //   案件詳細フォームで引き続き編集できる。
@@ -100,6 +101,13 @@ export function CampaignList({ campaigns, costMaps }: CampaignListProps) {
           return (b.budget ?? 0) - (a.budget ?? 0)
         case 'billing_amount_desc':
           return (b.billing_amount ?? 0) - (a.billing_amount ?? 0)
+        case 'certainty_asc': {
+          // 確度順（A.完了 → F.失注）。未知値は最後尾。同確度は請求月の新しい順。
+          const ra = CERTAINTY_RANK[a.certainty] ?? 99
+          const rb = CERTAINTY_RANK[b.certainty] ?? 99
+          if (ra !== rb) return ra - rb
+          return (getBillingMonth(b) ?? '').localeCompare(getBillingMonth(a) ?? '')
+        }
         default:
           return 0
       }
@@ -174,6 +182,7 @@ export function CampaignList({ campaigns, costMaps }: CampaignListProps) {
                 <SelectItem value="billing_month_asc">請求月（古い順）</SelectItem>
                 <SelectItem value="budget_desc">予算（高い順）</SelectItem>
                 <SelectItem value="billing_amount_desc">売上（高い順）</SelectItem>
+                <SelectItem value="certainty_asc">確度（A→F）</SelectItem>
               </SelectContent>
             </Select>
           </div>

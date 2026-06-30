@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { CertaintyFilterBar, useCertaintyFilter } from '@/components/shared/certainty-filter'
 
 interface FixedCostRow {
   id: string
@@ -41,6 +42,7 @@ interface CampaignRef {
   id: number
   maker: string
   product: string
+  certainty?: string
 }
 
 interface CostBreakdownProps {
@@ -70,6 +72,19 @@ export function CostBreakdown({ fixedCosts, personnelPayments, campaignCosts, ca
 
   const toggle = (key: string) => setOpenSections(prev => ({ ...prev, [key]: !prev[key] }))
 
+  // 確度フィルタ（初期は失注以外）。案件に紐づく原価（案件コスト）のみ確度で絞り込む。
+  // EG・人件費は案件確度を持たない固定費なので対象外（常に表示）。
+  const certaintyFilter = useCertaintyFilter()
+  const certaintyByCampaign = useMemo(() => {
+    const map: Record<number, string | undefined> = {}
+    campaigns.forEach(c => { map[c.id] = c.certainty })
+    return map
+  }, [campaigns])
+  const filteredCampaignCosts = useMemo(
+    () => campaignCosts.filter(c => certaintyFilter.matches(certaintyByCampaign[c.campaign_id])),
+    [campaignCosts, certaintyByCampaign, certaintyFilter],
+  )
+
   // --- E-Guardian data ---
   const egSubcategories = useMemo(() => {
     const subs = new Set(fixedCosts.filter(c => c.cost_category === 'e_guardian').map(c => c.cost_subcategory))
@@ -89,7 +104,7 @@ export function CostBreakdown({ fixedCosts, personnelPayments, campaignCosts, ca
 
   // --- Campaign costs data ---
   const projectCostEntries = useMemo(() => Object.values(
-    campaignCosts.reduce<Record<string, { campaignId: number; displayName: string; costLabel: string; byMonth: Record<string, number> }>>((acc, cost) => {
+    filteredCampaignCosts.reduce<Record<string, { campaignId: number; displayName: string; costLabel: string; byMonth: Record<string, number> }>>((acc, cost) => {
       const campaign = campaigns.find(c => c.id === cost.campaign_id)
       const displayName = campaign ? `${campaign.maker} ${campaign.product}` : ''
       const key = `${cost.campaign_id}::${cost.cost_label}`
@@ -97,10 +112,10 @@ export function CostBreakdown({ fixedCosts, personnelPayments, campaignCosts, ca
       if (cost.target_month) acc[key].byMonth[cost.target_month] = (acc[key].byMonth[cost.target_month] || 0) + Number(cost.amount)
       return acc
     }, {})
-  ), [campaignCosts, campaigns])
+  ), [filteredCampaignCosts, campaigns])
 
   const getProjectCostSubtotal = (month: string) =>
-    campaignCosts.filter(c => c.target_month === month).reduce((s, c) => s + Number(c.amount), 0)
+    filteredCampaignCosts.filter(c => c.target_month === month).reduce((s, c) => s + Number(c.amount), 0)
 
   // Grand total
   const getGrandTotal = (month: string) => getEgSubtotal(month) + getPersonnelAmount(month) + getProjectCostSubtotal(month)
@@ -108,7 +123,13 @@ export function CostBreakdown({ fixedCosts, personnelPayments, campaignCosts, ca
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">月次コスト内訳</CardTitle>
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <CardTitle className="text-base whitespace-nowrap">月次コスト内訳</CardTitle>
+          <CertaintyFilterBar filter={certaintyFilter} />
+        </div>
+        <p className="text-xs text-gray-500 mt-1">
+          ※ 確度フィルタは案件コスト（原価）にのみ適用。EG・人件費は固定費のため常に表示します。
+        </p>
       </CardHeader>
       <CardContent className="overflow-x-auto">
         <Table>
