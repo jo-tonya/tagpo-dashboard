@@ -79,7 +79,8 @@ export function CampaignList({ campaigns, costMaps }: CampaignListProps) {
   // §15-4-2: フィルタ & 並び順
   const [categoryFilter, setCategoryFilter] = useState<'all' | CampaignCategory>('all')
   const [billingMonthFilter, setBillingMonthFilter] = useState<string>('all')
-  const [sortOrder, setSortOrder] = useState<SortOrder>('billing_month_desc')
+  // §15-4-2: 既定は確度順（A.完了→F.失注、同確度は請求月の新しい順）で開く
+  const [sortOrder, setSortOrder] = useState<SortOrder>('certainty_asc')
   // §18: 失注案件はデフォルト非表示
   const [showLost, setShowLost] = useState(false)
 
