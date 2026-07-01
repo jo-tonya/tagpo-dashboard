@@ -3,19 +3,18 @@
 import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Campaign, CampaignCategory, CAMPAIGN_CATEGORIES, getBillingMonth } from '@/lib/types'
+import { Campaign, getBillingMonth } from '@/lib/types'
 import { calcCampaignProfit, formatCurrency, formatMonth } from '@/lib/calculations'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
-import { Button } from '@/components/ui/button'
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
-import { CERTAINTY_RANK } from '@/components/shared/certainty-filter'
+import { CERTAINTY_RANK, CertaintyFilterBar, useCertaintyFilter } from '@/components/shared/certainty-filter'
 
 interface CostMaps {
   subcontractByCampaign: Record<number, number>
@@ -77,12 +76,10 @@ export function CampaignList({ campaigns, costMaps }: CampaignListProps) {
   const router = useRouter()
 
   // §15-4-2: フィルタ & 並び順
-  const [categoryFilter, setCategoryFilter] = useState<'all' | CampaignCategory>('all')
+  // 確度フィルタは事業収入・事業コストと同一部品（CertaintyFilterBar）。初期は失注以外（A〜E）。
+  const certaintyFilter = useCertaintyFilter()
   const [billingMonthFilter, setBillingMonthFilter] = useState<string>('all')
-  // §15-4-2: 既定は確度順（A.完了→F.失注、同確度は請求月の新しい順）で開く
-  const [sortOrder, setSortOrder] = useState<SortOrder>('certainty_asc')
-  // §18: 失注案件はデフォルト非表示
-  const [showLost, setShowLost] = useState(false)
+  const [sortOrder, setSortOrder] = useState<SortOrder>('billing_month_desc')
 
   const availableBillingMonths = useMemo(() => {
     const set = new Set<string>()
@@ -95,11 +92,8 @@ export function CampaignList({ campaigns, costMaps }: CampaignListProps) {
 
   const visibleCampaigns = useMemo(() => {
     let list = campaigns
-    // §18: F.失注 はデフォルト非表示
-    if (!showLost) list = list.filter(c => c.certainty !== 'F.失注')
-    if (categoryFilter !== 'all') {
-      list = list.filter(c => (c.category ?? 'Tagpo') === categoryFilter)
-    }
+    // 確度フィルタ（収入・コストと同一。初期は失注以外）
+    list = list.filter(c => certaintyFilter.matches(c.certainty))
     if (billingMonthFilter !== 'all') {
       list = list.filter(c => getBillingMonth(c) === billingMonthFilter)
     }
@@ -124,7 +118,7 @@ export function CampaignList({ campaigns, costMaps }: CampaignListProps) {
           return 0
       }
     })
-  }, [campaigns, categoryFilter, billingMonthFilter, sortOrder, showLost])
+  }, [campaigns, certaintyFilter, billingMonthFilter, sortOrder])
 
   async function handleCertaintyChange(id: number, certainty: string) {
     await fetch(`/api/campaigns/${id}/certainty`, {
@@ -140,35 +134,8 @@ export function CampaignList({ campaigns, costMaps }: CampaignListProps) {
       <CardContent className="p-0 overflow-x-auto">
         {/* §15-4-2: フィルタバー */}
         <div className="flex items-center gap-3 p-3 border-b bg-gray-50 flex-wrap">
-          <div className="flex gap-1 flex-wrap">
-            <Button
-              size="sm"
-              variant={categoryFilter === 'all' ? 'default' : 'outline'}
-              onClick={() => setCategoryFilter('all')}
-            >
-              すべて
-            </Button>
-            {CAMPAIGN_CATEGORIES.map(c => (
-              <Button
-                key={c}
-                size="sm"
-                variant={categoryFilter === c ? 'default' : 'outline'}
-                onClick={() => setCategoryFilter(c)}
-              >
-                {c}
-              </Button>
-            ))}
-            {/* §18: 失注を表示トグル */}
-            <Button
-              size="sm"
-              variant={showLost ? 'default' : 'outline'}
-              className={showLost ? 'bg-red-700 hover:bg-red-800' : ''}
-              onClick={() => setShowLost(v => !v)}
-              title="失注案件を一覧に含める"
-            >
-              失注を表示
-            </Button>
-          </div>
+          {/* 確度フィルタ（事業収入・事業コストと同一部品） */}
+          <CertaintyFilterBar filter={certaintyFilter} />
 
           <div className="flex items-center gap-2 ml-auto flex-wrap">
             <Label className="text-sm whitespace-nowrap">請求月</Label>
