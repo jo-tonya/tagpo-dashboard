@@ -59,6 +59,17 @@ const CERTAINTY_COLORS: Record<string, string> = {
 
 type SortOrder = 'billing_month_desc' | 'billing_month_asc' | 'budget_desc' | 'billing_amount_desc' | 'certainty_asc'
 
+// §15-4-2: 並び順の表示ラベル。
+//   base-ui の Select.Value は既定で「選択値（内部コード）」を出すため、
+//   トリガーに日本語ラベルを出すにはこの対応表で明示的に変換する（SelectItem と文言を統一）。
+const SORT_LABELS: Record<SortOrder, string> = {
+  billing_month_desc: '請求月（新しい順）',
+  billing_month_asc: '請求月（古い順）',
+  budget_desc: '予算（高い順）',
+  billing_amount_desc: '売上（高い順）',
+  certainty_asc: '確度（A→F）',
+}
+
 // §19-2: 旧 InlineRewardInput / handleRewardSave は削除（ユーザー報酬額列を一覧から外したため）。
 //   案件詳細フォームで引き続き編集できる。
 
@@ -162,7 +173,9 @@ export function CampaignList({ campaigns, costMaps }: CampaignListProps) {
             <Label className="text-sm whitespace-nowrap">請求月</Label>
             <Select value={billingMonthFilter} onValueChange={(v) => v && setBillingMonthFilter(v)}>
               <SelectTrigger className="w-[140px] h-8 text-sm">
-                <SelectValue placeholder="すべて" />
+                <SelectValue placeholder="すべて">
+                  {(v: string) => (v === 'all' ? 'すべて' : formatMonth(v))}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">すべて</SelectItem>
@@ -175,7 +188,7 @@ export function CampaignList({ campaigns, costMaps }: CampaignListProps) {
             <Label className="text-sm whitespace-nowrap">並び順</Label>
             <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as SortOrder)}>
               <SelectTrigger className="w-[180px] h-8 text-sm">
-                <SelectValue />
+                <SelectValue>{(v: SortOrder) => SORT_LABELS[v]}</SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="billing_month_desc">請求月（新しい順）</SelectItem>
